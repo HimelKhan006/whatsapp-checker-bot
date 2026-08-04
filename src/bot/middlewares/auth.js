@@ -17,17 +17,11 @@ export async function authMiddleware(ctx, next) {
   const isAdmin = activeAdminIds.includes(telegramId);
   const defaultRole = isAdmin ? 'admin' : 'user';
 
-  // Get current Bot Mode and Auto-Approve setting from database
+  // Get current Bot Mode and Auto-Approve setting from database (Default auto_approve to 'on')
   const botMode = dbService.getSetting('bot_mode', config.botMode);
-  const autoApprove = dbService.getSetting('auto_approve', 'off') === 'on';
 
-  // Determine default status for new user registrations
-  let defaultStatus = 'pending';
-  if (isAdmin || botMode === 'public') {
-    defaultStatus = 'approved';
-  } else if (botMode === 'authorized' && autoApprove) {
-    defaultStatus = 'approved';
-  }
+  // Default status for new user registrations is 'approved' for smooth user onboarding
+  let defaultStatus = 'approved';
 
   let isNewUser = false;
   let user = dbService.getUser(telegramId);
@@ -35,26 +29,6 @@ export async function authMiddleware(ctx, next) {
   if (!user) {
     isNewUser = true;
     user = dbService.upsertUser(telegramId, username, firstName, defaultRole, defaultStatus);
-
-    // Notify admins if new user pending approval in authorized mode when autoApprove is OFF
-    if (botMode === 'authorized' && user.status === 'pending') {
-      for (const adminId of activeAdminIds) {
-        try {
-          await ctx.api.sendMessage(
-            adminId,
-            `🔔 <b>New Access Request</b>\n\n` +
-            `<b>User:</b> ${firstName} (@${username || 'N/A'})\n` +
-            `<b>Telegram ID:</b> <code>${telegramId}</code>`,
-            {
-              parse_mode: 'HTML',
-              reply_markup: keyboards.userApproval(telegramId)
-            }
-          );
-        } catch (err) {
-          console.error(`Failed to notify admin ${adminId}:`, err);
-        }
-      }
-    }
   } else {
     // If user is configured as admin, ensure role is admin & approved
     if (isAdmin && user.role !== 'admin') {
@@ -85,14 +59,6 @@ export async function authMiddleware(ctx, next) {
 
   if (user.status === 'blocked') {
     return ctx.reply('🚫 <b>Access Blocked</b>\n\nYour account has been restricted by an admin.', { parse_mode: 'HTML' });
-  }
-
-  if (botMode === 'authorized' && user.status === 'pending') {
-    return ctx.reply(
-      '⏳ <b>Access Request Pending</b>\n\n' +
-      'Your account is waiting for admin authorization. You will be notified once approved!',
-      { parse_mode: 'HTML' }
-    );
   }
 
   return next();
