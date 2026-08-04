@@ -231,7 +231,7 @@ export function registerPairHandlers(bot) {
       await ctx.editMessageText(
         `🔢 <b>Pair via WhatsApp 8-Digit Code</b>\n\n` +
         `Please reply with your WhatsApp phone number including country code.\n` +
-        `<i>Example:</i> <code>+1234567890</code> or <code>1234567890</code>`,
+        `<i>Example:</i> <code>+1234567890</code> or <code>8801712345678</code>`,
         {
           parse_mode: 'HTML',
           reply_markup: keyboards.cancelPairing()
@@ -241,7 +241,7 @@ export function registerPairHandlers(bot) {
       await ctx.reply(
         `🔢 <b>Pair via WhatsApp 8-Digit Code</b>\n\n` +
         `Please reply with your WhatsApp phone number including country code.\n` +
-        `<i>Example:</i> <code>+1234567890</code> or <code>1234567890</code>`,
+        `<i>Example:</i> <code>+1234567890</code> or <code>8801712345678</code>`,
         {
           parse_mode: 'HTML',
           reply_markup: keyboards.cancelPairing()
@@ -260,15 +260,25 @@ export function registerPairHandlers(bot) {
       clearUserPairingTrackers(telegramId);
       const rawText = ctx.message.text.trim();
 
+      const userMsgId = ctx.message.message_id;
       const waitMsg = await ctx.reply('⏳ <b>Requesting 8-digit pairing code from WhatsApp...</b>', { parse_mode: 'HTML' });
 
       try {
         let isCodeConnected = false;
+        let codeSentMsgId = null;
 
         const pairingCode = await sessionManager.requestPairingCode(telegramId, rawText, {
           onConnected: async (user) => {
             isCodeConnected = true;
             clearUserPairingTrackers(telegramId);
+
+            // Cleanly delete temporary pairing code message and user input message
+            if (codeSentMsgId) {
+              try { await ctx.api.deleteMessage(ctx.chat.id, codeSentMsgId); } catch (e) {}
+            }
+            if (userMsgId) {
+              try { await ctx.api.deleteMessage(ctx.chat.id, userMsgId); } catch (e) {}
+            }
 
             const maskedPhone = formatMaskedPhone(user?.id);
             await ctx.reply(
@@ -306,6 +316,7 @@ export function registerPairHandlers(bot) {
             reply_markup: keyboards.cancelPairing()
           }
         );
+        codeSentMsgId = codeMsg.message_id;
 
         // Interval to update pairing code expiration progress bar
         const interval = setInterval(async () => {
@@ -315,7 +326,7 @@ export function registerPairHandlers(bot) {
             try {
               await ctx.api.editMessageText(
                 ctx.chat.id,
-                codeMsg.message_id,
+                codeSentMsgId,
                 `🔑 <b>Your WhatsApp 8-Digit Pairing Code:</b>\n\n` +
                 `<code>${formattedCode}</code>\n\n` +
                 `<b>Instructions to link your phone:</b>\n` +
@@ -345,7 +356,7 @@ export function registerPairHandlers(bot) {
             try {
               await ctx.api.editMessageText(
                 ctx.chat.id,
-                codeMsg.message_id,
+                codeSentMsgId,
                 `⏱️ <b>WhatsApp Pairing Code Expired</b>\n\n` +
                 `The 8-digit pairing code has expired.\n` +
                 `Click <b>Request New Code</b> below to generate a fresh pairing code.`,
