@@ -84,7 +84,7 @@ export const sessionManager = {
       auth: state,
       printQRInTerminal: false,
       logger,
-      browser: Browsers.ubuntu('Chrome'), // Baileys standard Ubuntu Chrome tuple required for Pairing Code & QR compatibility
+      browser: ['Ubuntu', 'Chrome', '20.0.04'],
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 25000,
       emitOwnEvents: false,
@@ -151,28 +151,44 @@ export const sessionManager = {
   async requestPairingCode(telegramId, phoneNumber) {
     const key = String(telegramId);
 
-    // If session is stale / not connected, clear old session directory first
-    if (!this.isSessionConnected(telegramId)) {
-      await this.logoutSession(telegramId);
-    }
-
-    const sock = await this.initSession(telegramId);
-
-    // Wait until WebSocket connection is open (up to 10 seconds)
-    let attempts = 0;
-    while (!sock.ws || sock.ws.readyState !== 1) {
-      await new Promise(r => setTimeout(r, 500));
-      attempts++;
-      if (attempts > 20) break;
-    }
-
+    // Clean phone number (digits only, e.g. 1234567890)
     const cleanNum = phoneNumber.replace(/[^\d]/g, '');
     if (!cleanNum || cleanNum.length < 7) {
       throw new Error('Invalid phone number format. Please include country code without symbols (e.g. 1234567890).');
     }
 
-    const code = await sock.requestPairingCode(cleanNum);
-    return code;
+    // Force purge any old/stale session directory for clean registration
+    await this.logoutSession(telegramId);
+
+    const sessionPath = this.getSessionDir(key);
+    const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
+    const { version } = await fetchLatestBaileysVersion();
+
+    const sock = makeWASocket({
+      version,
+      auth: state,
+      printQRInTerminal: false,
+      logger,
+      browser: ['Ubuntu', 'Chrome', '20.0.04'],
+      connectTimeoutMs: 60000,
+      keepAliveIntervalMs: 25000,
+      emitOwnEvents: false,
+    });
+
+    activeSessions.set(key, sock);
+    sessionStatus.set(key, 'connecting');
+
+    sock.ev.on('creds.update', saveCreds);
+
+    // Wait briefly for auth state initialization
+    await new Promise(r => setTimeout(r, 1500));
+
+    if (!sock.authState.creds.registered) {
+      const code = await sock.requestPairingCode(cleanNum);
+      return code;
+    } else {
+      throw new Error('Session is already registered or credentials exist. Please logout first.');
+    }
   },
 
   async logoutSession(telegramId) {
