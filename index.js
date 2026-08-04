@@ -1,11 +1,27 @@
 import fs from 'fs';
 import path from 'path';
+import http from 'http';
 import { config } from './src/config.js';
 import { dbService } from './src/db/database.js';
 import { startBot, sendServerOfflineAlert } from './src/bot/index.js';
 import { sessionManager } from './src/whatsapp/sessionManager.js';
 
 let isShuttingDown = false;
+
+// Start a lightweight HTTP server for Render health checks & port binding
+const PORT = process.env.PORT || 10000;
+const httpServer = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({
+    status: 'online',
+    service: 'WhatsApp Registration Checker Bot',
+    timestamp: new Date().toISOString()
+  }));
+});
+
+httpServer.listen(PORT, () => {
+  console.log(`🌐 Health check HTTP server bound to port ${PORT}`);
+});
 
 // Process Shutdown Hook to send Server Offline Alerts to Admins
 async function handleShutdown(signal) {
@@ -20,6 +36,10 @@ async function handleShutdown(signal) {
   } catch (err) {
     console.error('Error delivering offline alert:', err.message);
   }
+
+  try {
+    httpServer.close();
+  } catch (e) {}
 
   process.exit(0);
 }
