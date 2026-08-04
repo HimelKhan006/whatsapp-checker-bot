@@ -84,7 +84,7 @@ export const sessionManager = {
       auth: state,
       printQRInTerminal: false,
       logger,
-      browser: ['Ubuntu', 'Chrome', '20.0.04'],
+      browser: ['Windows', 'Chrome', '120.0.0.0'], // Standard trusted Windows Desktop Chrome browser tuple
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 25000,
       emitOwnEvents: false,
