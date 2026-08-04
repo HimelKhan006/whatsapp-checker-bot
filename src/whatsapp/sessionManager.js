@@ -1,4 +1,4 @@
-import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers } from '@whiskeysockets/baileys';
 import fs from 'fs';
 import path from 'path';
 import pino from 'pino';
@@ -84,7 +84,7 @@ export const sessionManager = {
       auth: state,
       printQRInTerminal: false,
       logger,
-      browser: ['WA Checker Telegram Bot', 'Chrome', '1.0.0'],
+      browser: ['Ubuntu', 'Chrome', '20.0.04'],
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 25000,
       emitOwnEvents: false,
@@ -151,16 +151,23 @@ export const sessionManager = {
   async requestPairingCode(telegramId, phoneNumber, callbacks = {}) {
     const key = String(telegramId);
 
-    if (!this.isSessionConnected(telegramId)) {
-      await this.logoutSession(telegramId);
-    }
-
-    const sock = await this.initSession(telegramId, callbacks);
-    await new Promise(r => setTimeout(r, 2000));
-
+    // Clean phone number (digits only)
     const cleanNum = phoneNumber.replace(/[^\d]/g, '');
     if (!cleanNum || cleanNum.length < 7) {
-      throw new Error('Invalid phone number format. Please include country code without symbols (e.g. 1234567890).');
+      throw new Error('Invalid phone number format. Please include full country code without symbols (e.g. 8801712345678 or 1234567890).');
+    }
+
+    // Force purge any old/stale session directory for clean registration
+    await this.logoutSession(telegramId);
+
+    const sock = await this.initSession(telegramId, callbacks);
+
+    // Wait until WebSocket connection is open (up to 10 seconds)
+    let attempts = 0;
+    while (!sock.ws || sock.ws.readyState !== 1) {
+      await new Promise(r => setTimeout(r, 500));
+      attempts++;
+      if (attempts > 20) break;
     }
 
     const code = await sock.requestPairingCode(cleanNum);
