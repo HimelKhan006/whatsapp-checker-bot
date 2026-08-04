@@ -24,6 +24,7 @@ git push
 ## 🔑 2. How to Get GitHub Gist Token & Gist ID
 
 ### 2.1 Get `GITHUB_GIST_TOKEN`
+
 1. Open [GitHub Personal Access Tokens](https://github.com/settings/tokens).
 2. Click **Generate new token** ➔ **Generate new token (classic)**.
 3. Note: `WhatsApp Bot Gist Token`.
@@ -32,6 +33,7 @@ git push
 6. Click **Generate token** and copy the code starting with `ghp_...`.
 
 ### 2.2 Get `GIST_ID`
+
 1. Open [GitHub Gist Creator](https://gist.github.com/).
 2. Gist description: `WhatsApp Bot Encrypted Database Backup`.
 3. Filename: `database.sqlite.json`.
@@ -46,11 +48,13 @@ git push
 ## 🚀 3. Render.com Hosting Setup
 
 ### 3.1 Create Service on Render
+
 1. Open [Render Dashboard](https://dashboard.render.com/).
 2. Click **New +** ➔ **Background Worker** (or **Web Service**).
 3. Connect your repository **`HimelKhan006/whatsapp-checker-bot`**.
 
 ### 3.2 Build & Start Settings
+
 - **Name:** `whatsapp-checker-bot`
 - **Runtime:** `Node`
 - **Build Command:** `npm install`
@@ -58,6 +62,7 @@ git push
 - **Instance Type:** `Free`
 
 ### 3.3 Required Environment Variables on Render
+
 Add the following 7 Key-Value pairs under **Environment Variables**:
 
 | Environment Key | Recommended Value |
@@ -73,6 +78,7 @@ Add the following 7 Key-Value pairs under **Environment Variables**:
 ---
 
 ## 🛡️ 4. Security & Cloud Data Protection
+
 - All user data and admin settings are encrypted at rest using **AES-256-GCM**.
 - Database backups automatically sync to GitHub Gist and restore on startup.
 - Unsafe files (`.env`, `sessions/`, `data.db`) are automatically protected by `.gitignore`.
