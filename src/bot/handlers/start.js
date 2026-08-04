@@ -188,6 +188,8 @@ export function registerStartHandlers(bot) {
     const maskedPhone = isConnected ? formatMaskedPhone(sock?.user?.id) : null;
     const joinedDate = user?.created_at ? user.created_at.split(' ')[0] : 'N/A';
 
+    const statusTag = user?.status === 'approved' ? 'APPROVED ✅' : user?.status === 'pending' ? 'PENDING APPROVAL ⏳' : 'BANNED 🚫';
+
     let profileMsg =
       `👤 <b>User Profile & Account Details</b>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
@@ -197,7 +199,7 @@ export function registerStartHandlers(bot) {
       `• <b>Telegram ID:</b> <code>${telegramId}</code>\n` +
       `• <b>Joined Date:</b> <code>📅 ${joinedDate}</code>\n` +
       `• <b>Role:</b> <code>${isAdmin ? '👑 Super Admin' : '👤 Authorized User'}</code>\n` +
-      `• <b>Status:</b> <code>${user?.status?.toUpperCase() || 'APPROVED'} ✅</code>\n\n` +
+      `• <b>Status:</b> <code>${statusTag}</code>\n\n` +
       `📱 <b>WhatsApp Client Status:</b>\n` +
       `• <b>Status:</b> ${isConnected ? `🟢 Linked & Active (<code>${maskedPhone}</code>)` : '🔴 Not Paired'}\n\n` +
       `📊 <b>Usage Diagnostics:</b>\n` +
