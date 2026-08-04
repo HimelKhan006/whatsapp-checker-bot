@@ -225,7 +225,8 @@ export function registerPairHandlers(bot) {
       return ctx.reply('✅ WhatsApp session is already connected!');
     }
 
-    userPairingState.set(telegramId, { step: 'AWAITING_PHONE' });
+    const currentMsgId = ctx.callbackQuery?.message?.message_id;
+    userPairingState.set(telegramId, { step: 'AWAITING_PHONE', initialPromptMsgId: currentMsgId });
 
     try {
       await ctx.editMessageText(
@@ -238,7 +239,7 @@ export function registerPairHandlers(bot) {
         }
       );
     } catch (e) {
-      await ctx.reply(
+      const sent = await ctx.reply(
         `🔢 <b>Pair via WhatsApp 8-Digit Code</b>\n\n` +
         `Please reply with your WhatsApp phone number including country code.\n` +
         `<i>Example:</i> <code>+1234567890</code> or <code>8801712345678</code>`,
@@ -247,6 +248,7 @@ export function registerPairHandlers(bot) {
           reply_markup: keyboards.cancelPairing()
         }
       );
+      userPairingState.set(telegramId, { step: 'AWAITING_PHONE', initialPromptMsgId: sent.message_id });
     }
   });
 
@@ -256,28 +258,40 @@ export function registerPairHandlers(bot) {
     const pairingState = userPairingState.get(telegramId);
 
     if (pairingState && pairingState.step === 'AWAITING_PHONE') {
+      const initialPromptMsgId = pairingState.initialPromptMsgId;
       userPairingState.delete(telegramId);
       clearUserPairingTrackers(telegramId);
-      const rawText = ctx.message.text.trim();
 
+      const rawText = ctx.message.text.trim();
       const userMsgId = ctx.message.message_id;
+
+      let codeSentMsgId = null;
+
+      // Delete initial prompt message cleanly
+      if (initialPromptMsgId) {
+        try { await ctx.api.deleteMessage(ctx.chat.id, initialPromptMsgId); } catch (e) {}
+      }
+
       const waitMsg = await ctx.reply('⏳ <b>Requesting 8-digit pairing code from WhatsApp...</b>', { parse_mode: 'HTML' });
+      codeSentMsgId = waitMsg.message_id;
 
       try {
         let isCodeConnected = false;
-        let codeSentMsgId = null;
 
         const pairingCode = await sessionManager.requestPairingCode(telegramId, rawText, {
           onConnected: async (user) => {
             isCodeConnected = true;
             clearUserPairingTrackers(telegramId);
 
-            // Cleanly delete temporary pairing code message and user input message
+            // Cleanly purge all temporary pairing messages & user input message
             if (codeSentMsgId) {
               try { await ctx.api.deleteMessage(ctx.chat.id, codeSentMsgId); } catch (e) {}
             }
             if (userMsgId) {
               try { await ctx.api.deleteMessage(ctx.chat.id, userMsgId); } catch (e) {}
+            }
+            if (initialPromptMsgId) {
+              try { await ctx.api.deleteMessage(ctx.chat.id, initialPromptMsgId); } catch (e) {}
             }
 
             const maskedPhone = formatMaskedPhone(user?.id);
