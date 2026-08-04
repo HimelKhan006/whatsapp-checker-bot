@@ -1,0 +1,24 @@
+services:
+  - type: worker
+    name: whatsapp-checker-bot
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 20.x
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
+      - key: BOT_MODE
+        value: authorized
+      - key: CHECK_DELAY_MS
+        value: 0
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      - key: GITHUB_GIST_TOKEN
+        sync: false
+      - key: GIST_ID
+        sync: false
