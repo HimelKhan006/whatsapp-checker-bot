@@ -1,4 +1,4 @@
-import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers } from '@whiskeysockets/baileys';
 import fs from 'fs';
 import path from 'path';
 import pino from 'pino';
@@ -84,7 +84,7 @@ export const sessionManager = {
       auth: state,
       printQRInTerminal: false,
       logger,
-      browser: ['WA Checker Telegram Bot', 'Chrome', '1.0.0'],
+      browser: Browsers.ubuntu('Chrome'), // Baileys standard Ubuntu Chrome tuple required for Pairing Code & QR compatibility
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 25000,
       emitOwnEvents: false,
@@ -150,14 +150,27 @@ export const sessionManager = {
 
   async requestPairingCode(telegramId, phoneNumber) {
     const key = String(telegramId);
-    let sock = this.getSocket(key);
 
-    if (!sock || this.getStatus(key) === 'disconnected') {
-      sock = await this.initSession(telegramId);
-      await new Promise(r => setTimeout(r, 2000));
+    // If session is stale / not connected, clear old session directory first
+    if (!this.isSessionConnected(telegramId)) {
+      await this.logoutSession(telegramId);
+    }
+
+    const sock = await this.initSession(telegramId);
+
+    // Wait until WebSocket connection is open (up to 10 seconds)
+    let attempts = 0;
+    while (!sock.ws || sock.ws.readyState !== 1) {
+      await new Promise(r => setTimeout(r, 500));
+      attempts++;
+      if (attempts > 20) break;
     }
 
     const cleanNum = phoneNumber.replace(/[^\d]/g, '');
+    if (!cleanNum || cleanNum.length < 7) {
+      throw new Error('Invalid phone number format. Please include country code without symbols (e.g. 1234567890).');
+    }
+
     const code = await sock.requestPairingCode(cleanNum);
     return code;
   },

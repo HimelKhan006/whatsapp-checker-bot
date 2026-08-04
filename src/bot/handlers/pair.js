@@ -265,7 +265,7 @@ export function registerPairHandlers(bot) {
       try {
         const pairingCode = await sessionManager.requestPairingCode(telegramId, rawText);
         
-        // Format pairing code e.g. ABC1-DEF2
+        // Format pairing code e.g. ABCD-1234
         const formattedCode = pairingCode ? pairingCode.match(/.{1,4}/g)?.join('-') || pairingCode : pairingCode;
 
         let secondsLeft = 60;
@@ -274,12 +274,14 @@ export function registerPairHandlers(bot) {
         const codeMsg = await ctx.api.editMessageText(
           ctx.chat.id,
           waitMsg.message_id,
-          `🔑 <b>Your WhatsApp Pairing Code:</b>\n\n` +
+          `🔑 <b>Your WhatsApp 8-Digit Pairing Code:</b>\n\n` +
           `<code>${formattedCode}</code>\n\n` +
-          `<b>Instructions:</b>\n` +
-          `1. Open WhatsApp on your phone.\n` +
-          `2. Go to <b>Linked Devices</b> > <b>Link with phone number instead</b>.\n` +
-          `3. Enter the 8-digit code above.\n\n` +
+          `<b>Instructions to link your phone:</b>\n` +
+          `1. Open <b>WhatsApp</b> on your phone.\n` +
+          `2. Tap <b>Settings</b> (or 3 Dots) > <b>Linked Devices</b>.\n` +
+          `3. Tap <b>Link a Device</b>.\n` +
+          `4. Tap <b>"Link with phone number instead"</b> at the bottom.\n` +
+          `5. Enter the code: <code>${formattedCode}</code>\n\n` +
           `⏱️ <b>Expiration Countdown:</b>\n<code>${initialBar}</code>`,
           {
             parse_mode: 'HTML',
@@ -296,6 +298,17 @@ export function registerPairHandlers(bot) {
             if (update.connection === 'open') {
               isCodeConnected = true;
               clearUserPairingTrackers(telegramId);
+
+              const maskedPhone = formatMaskedPhone(sock.user?.id);
+              await ctx.reply(
+                `🎉 <b>WhatsApp Account Paired Successfully!</b>\n\n` +
+                `<b>Connected Account:</b> <code>${maskedPhone}</code>\n` +
+                `You are now ready to start checking numbers!`,
+                {
+                  parse_mode: 'HTML',
+                  reply_markup: keyboards.mainMenu(ctx.state.isAdmin, true)
+                }
+              );
             }
           });
         }
@@ -309,13 +322,15 @@ export function registerPairHandlers(bot) {
               await ctx.api.editMessageText(
                 ctx.chat.id,
                 codeMsg.message_id,
-                `🔑 <b>Your WhatsApp Pairing Code:</b>\n\n` +
+                `🔑 <b>Your WhatsApp 8-Digit Pairing Code:</b>\n\n` +
                 `<code>${formattedCode}</code>\n\n` +
-                `<b>Instructions:</b>\n` +
-                `1. Open WhatsApp on your phone.\n` +
-                `2. Go to <b>Linked Devices</b> > <b>Link with phone number instead</b>.\n` +
-                `3. Enter the 8-digit code above.\n\n` +
-                `⏱️ <b>Expiration Countdown:</b>\n<code>${initialBar}</code>`,
+                `<b>Instructions to link your phone:</b>\n` +
+                `1. Open <b>WhatsApp</b> on your phone.\n` +
+                `2. Tap <b>Settings</b> (or 3 Dots) > <b>Linked Devices</b>.\n` +
+                `3. Tap <b>Link a Device</b>.\n` +
+                `4. Tap <b>"Link with phone number instead"</b> at the bottom.\n` +
+                `5. Enter the code: <code>${formattedCode}</code>\n\n` +
+                `⏱️ <b>Expiration Countdown:</b>\n<code>${currentBar}</code>`,
                 {
                   parse_mode: 'HTML',
                   reply_markup: keyboards.cancelPairing()
