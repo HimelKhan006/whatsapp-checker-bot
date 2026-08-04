@@ -263,7 +263,25 @@ export function registerPairHandlers(bot) {
       const waitMsg = await ctx.reply('⏳ <b>Requesting 8-digit pairing code from WhatsApp...</b>', { parse_mode: 'HTML' });
 
       try {
-        const pairingCode = await sessionManager.requestPairingCode(telegramId, rawText);
+        let isCodeConnected = false;
+
+        const pairingCode = await sessionManager.requestPairingCode(telegramId, rawText, {
+          onConnected: async (user) => {
+            isCodeConnected = true;
+            clearUserPairingTrackers(telegramId);
+
+            const maskedPhone = formatMaskedPhone(user?.id);
+            await ctx.reply(
+              `🎉 <b>WhatsApp Account Paired Successfully!</b>\n\n` +
+              `<b>Connected Account:</b> <code>${maskedPhone}</code>\n` +
+              `You are now ready to start checking numbers!`,
+              {
+                parse_mode: 'HTML',
+                reply_markup: keyboards.mainMenu(ctx.state.isAdmin, true)
+              }
+            );
+          }
+        });
         
         // Format pairing code e.g. ABCD-1234
         const formattedCode = pairingCode ? pairingCode.match(/.{1,4}/g)?.join('-') || pairingCode : pairingCode;
@@ -288,30 +306,6 @@ export function registerPairHandlers(bot) {
             reply_markup: keyboards.cancelPairing()
           }
         );
-
-        let isCodeConnected = false;
-
-        // Listen for connection completion
-        const sock = sessionManager.getSocket(telegramId);
-        if (sock) {
-          sock.ev.on('connection.update', async (update) => {
-            if (update.connection === 'open') {
-              isCodeConnected = true;
-              clearUserPairingTrackers(telegramId);
-
-              const maskedPhone = formatMaskedPhone(sock.user?.id);
-              await ctx.reply(
-                `🎉 <b>WhatsApp Account Paired Successfully!</b>\n\n` +
-                `<b>Connected Account:</b> <code>${maskedPhone}</code>\n` +
-                `You are now ready to start checking numbers!`,
-                {
-                  parse_mode: 'HTML',
-                  reply_markup: keyboards.mainMenu(ctx.state.isAdmin, true)
-                }
-              );
-            }
-          });
-        }
 
         // Interval to update pairing code expiration progress bar
         const interval = setInterval(async () => {
