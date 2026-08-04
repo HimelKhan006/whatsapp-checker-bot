@@ -2,12 +2,12 @@ services:
   - type: worker
     name: whatsapp-checker-bot
     env: node
-    buildCommand: npm install
+    buildCommand: npm install --no-audit --no-fund
     startCommand: npm start
     autoDeploy: true
     envVars:
       - key: NODE_VERSION
-        value: 20.x
+        value: 20.18.0
       - key: BOT_TOKEN
         sync: false
       - key: ADMIN_IDS
