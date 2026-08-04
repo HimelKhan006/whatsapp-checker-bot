@@ -2,8 +2,30 @@ import fs from 'fs';
 import path from 'path';
 import { config } from './src/config.js';
 import { dbService } from './src/db/database.js';
-import { startBot } from './src/bot/index.js';
+import { startBot, sendServerOfflineAlert } from './src/bot/index.js';
 import { sessionManager } from './src/whatsapp/sessionManager.js';
+
+let isShuttingDown = false;
+
+// Process Shutdown Hook to send Server Offline Alerts to Admins
+async function handleShutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`\n🛑 System received ${signal} signal. Triggering graceful shutdown & admin alerts...`);
+
+  try {
+    // Send Offline Alert to Admins
+    await sendServerOfflineAlert();
+    console.log('📢 Server Offline alert delivered to administrators.');
+  } catch (err) {
+    console.error('Error delivering offline alert:', err.message);
+  }
+
+  process.exit(0);
+}
+
+process.on('SIGINT', () => handleShutdown('SIGINT'));
+process.on('SIGTERM', () => handleShutdown('SIGTERM'));
 
 async function main() {
   console.log('====================================================');
