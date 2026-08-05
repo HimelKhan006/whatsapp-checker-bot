@@ -216,11 +216,14 @@ export const keyboards = {
 
   reportExport(bulkJobId) {
     return new InlineKeyboard()
+      .text('✅ Registered CSV', `export_csv_registered_${bulkJobId}`)
+      .text('✅ Registered TXT', `export_txt_registered_${bulkJobId}`)
+      .row()
+      .text('❌ Unregistered CSV', `export_csv_unregistered_${bulkJobId}`)
+      .text('❌ Unregistered TXT', `export_txt_unregistered_${bulkJobId}`)
+      .row()
       .text('📊 Full CSV', `export_csv_all_${bulkJobId}`)
       .text('📄 Full TXT', `export_txt_all_${bulkJobId}`)
-      .row()
-      .text('✅ Registered Only', `export_csv_registered_${bulkJobId}`)
-      .text('❌ Unregistered Only', `export_csv_unregistered_${bulkJobId}`)
       .row()
       .text('🔙 Main Menu', 'nav_main');
   },

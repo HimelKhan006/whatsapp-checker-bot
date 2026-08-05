@@ -114,10 +114,6 @@ export function registerCheckHandlers(bot) {
     if (doc.file_name?.endsWith('.txt') || doc.file_name?.endsWith('.csv')) {
       userCheckState.delete(telegramId);
 
-      if (state && state.promptMsgId) {
-        try { await ctx.api.deleteMessage(ctx.chat.id, state.promptMsgId); } catch (e) {}
-      }
-
       const waitMsg = await ctx.reply('📥 <i>Downloading file & parsing numbers...</i>', { parse_mode: 'HTML' });
       try {
         const file = await ctx.api.getFile(doc.file_id);
@@ -177,14 +173,7 @@ export function registerCheckHandlers(bot) {
     if (validNumbers.length > 0) {
       userCheckState.delete(telegramId);
 
-      // Auto-delete user input text message for clean chat
-      try { await ctx.deleteMessage(); } catch (e) {}
-
-      // Clean up prompt card message
-      if (state && state.promptMsgId) {
-        try { await ctx.api.deleteMessage(ctx.chat.id, state.promptMsgId); } catch (e) {}
-      }
-
+      // Keep user's input text message intact on screen (DO NOT DELETE!)
       if (validNumbers.length === 1) {
         await runSingleCheckProcess(ctx, telegramId, validNumbers[0]);
       } else {
@@ -197,7 +186,7 @@ export function registerCheckHandlers(bot) {
     return next();
   });
 
-  // Handle Export Callbacks
+  // Handle Export Callbacks (Supports CSV & TXT for all, registered, unregistered)
   bot.callbackQuery(/^export_(csv|txt)_(all|registered|unregistered)_(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery().catch(() => {});
     const match = ctx.match;
