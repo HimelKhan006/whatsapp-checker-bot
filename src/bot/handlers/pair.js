@@ -284,7 +284,7 @@ export function registerPairHandlers(bot) {
 
             const maskedPhone = formatMaskedPhone(user?.id);
 
-            // 1. Send the Success Card INSTANTLY in real-time so the user sees it immediately!
+            // 1. Send the Success Card INSTANTLY in real-time
             await ctx.api.sendMessage(
               chatId,
               `🎉 <b>WhatsApp Account Paired Successfully!</b>\n\n` +
@@ -374,19 +374,37 @@ export function registerPairHandlers(bot) {
             console.log(`[WA] Pairing code expired for user ${telegramId}`);
             await sessionManager.logoutSession(telegramId);
 
+            // Cleanly delete initial prompt card and user typed text message on expiration
+            if (initialPromptMsgId) {
+              try { await ctx.api.deleteMessage(chatId, initialPromptMsgId); } catch (e) {}
+            }
+            if (userMsgId) {
+              try { await ctx.api.deleteMessage(chatId, userMsgId); } catch (e) {}
+            }
+
             try {
               await ctx.api.editMessageText(
                 chatId,
                 codeSentMsgId,
                 `⏱️ <b>WhatsApp Pairing Code Expired</b>\n\n` +
                 `The 8-digit pairing code has expired.\n` +
-                `Click <b>Request New Code</b> below to generate a fresh pairing code.`,
+                `Click <b>Try Again</b> below to generate a fresh pairing code.`,
                 {
                   parse_mode: 'HTML',
                   reply_markup: keyboards.tryAgainCode()
                 }
               );
-            } catch (e) {}
+            } catch (e) {
+              await ctx.reply(
+                `⏱️ <b>WhatsApp Pairing Code Expired</b>\n\n` +
+                `The 8-digit pairing code has expired.\n` +
+                `Click <b>Try Again</b> below to generate a fresh pairing code.`,
+                {
+                  parse_mode: 'HTML',
+                  reply_markup: keyboards.tryAgainCode()
+                }
+              );
+            }
           }
         }, 60000);
 
