@@ -33,6 +33,8 @@ async function handleShutdown(signal) {
     // Send Offline Alert to Admins
     await sendServerOfflineAlert();
     console.log('📢 Server Offline alert delivered to administrators.');
+    // Give Node.js network event loop 1.5 seconds to flush TCP packets to Telegram API
+    await new Promise(r => setTimeout(r, 1500));
   } catch (err) {
     console.error('Error delivering offline alert:', err.message);
   }
@@ -46,6 +48,7 @@ async function handleShutdown(signal) {
 
 process.on('SIGINT', () => handleShutdown('SIGINT'));
 process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+process.on('SIGHUP', () => handleShutdown('SIGHUP'));
 
 async function main() {
   console.log('====================================================');

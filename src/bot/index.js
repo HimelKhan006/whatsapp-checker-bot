@@ -49,12 +49,10 @@ async function sendServerOnlineAlert(bot) {
   }
 }
 
-// Send Server Offline Alert to Admins
+// Send Server Offline Alert to Admins (with HTTP fetch fallback)
 export async function sendServerOfflineAlert() {
-  if (!globalBotInstance) return;
-
   const adminIds = getActiveAdminIds();
-  if (adminIds.length === 0) return;
+  if (adminIds.length === 0 || !config.botToken) return;
 
   const timeStr = getFormattedTime();
 
@@ -66,9 +64,18 @@ export async function sendServerOfflineAlert() {
     `💾 <b>Database Snapshot:</b> <code>Saved & Synced ☁️</code>\n\n` +
     `<i>The system will automatically send an ONLINE alert once boot sequence completes.</i>`;
 
-  const sendPromises = adminIds.map(adminId => 
-    globalBotInstance.api.sendMessage(adminId, msgText, { parse_mode: 'HTML' }).catch(() => {})
-  );
+  const sendPromises = adminIds.map(adminId => {
+    if (globalBotInstance) {
+      return globalBotInstance.api.sendMessage(adminId, msgText, { parse_mode: 'HTML' }).catch(() => {});
+    } else {
+      const url = `https://api.telegram.org/bot${config.botToken}/sendMessage`;
+      return fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: adminId, text: msgText, parse_mode: 'HTML' })
+      }).catch(() => {});
+    }
+  });
 
   await Promise.allSettled(sendPromises);
 }
@@ -106,38 +113,21 @@ export function createBot() {
   registerCheckHandlers(bot);
   registerAdminHandlers(bot);
 
-  // Global Error Handler
-  bot.catch((err) => {
-    const ctx = err.ctx;
-    console.error(`Error while handling update ${ctx.update.update_id}:`);
-    const e = err.error;
-    console.error('Error details:', e);
-  });
-
   return bot;
 }
 
 export async function startBot() {
   const bot = createBot();
-  console.log('🤖 Telegram Bot initialized successfully.');
 
-  // Set Telegram Bot Commands Menu (ONLY /start command as requested)
-  try {
-    await bot.api.setMyCommands([
-      { command: 'start', description: '⚡ Start Bot & Main Menu' }
-    ]);
-    console.log('📋 Telegram Command Menu updated with /start command only.');
-  } catch (e) {
-    console.error('Failed to set bot commands menu:', e.message);
-  }
+  console.log('🤖 Starting Telegram Bot listener...');
 
-  // Send Server Online Alert to Admins
-  await sendServerOnlineAlert(bot);
+  // Dispatch Server Online Alert card to all admins
+  sendServerOnlineAlert(bot).catch(err => console.error('Failed to send Server Online Alert:', err));
 
-  console.log('🚀 Starting bot polling...');
   await bot.start({
-    onStart(botInfo) {
-      console.log(`✅ Bot is live as @${botInfo.username} (${botInfo.first_name})`);
+    onStart: (botInfo) => {
+      console.log(`\n✅ Telegram Bot successfully started as @${botInfo.username}!`);
+      console.log('🚀 System is ready to accept commands and process requests.\n');
     }
   });
 }
