@@ -232,7 +232,7 @@ export function registerPairHandlers(bot) {
       await ctx.editMessageText(
         `🔢 <b>Pair via WhatsApp 8-Digit Code</b>\n\n` +
         `Please reply with your WhatsApp phone number including country code.\n` +
-        `<i>Example:</i> <code>+1234567890</code> or <code>8801712345678</code>`,
+        `<i>Example:</i> <code>+XXXXXXXXXX</code> or <code>88018XXXXXXXX</code>`,
         {
           parse_mode: 'HTML',
           reply_markup: keyboards.cancelPairing()
@@ -242,7 +242,7 @@ export function registerPairHandlers(bot) {
       const sent = await ctx.reply(
         `🔢 <b>Pair via WhatsApp 8-Digit Code</b>\n\n` +
         `Please reply with your WhatsApp phone number including country code.\n` +
-        `<i>Example:</i> <code>+1234567890</code> or <code>8801712345678</code>`,
+        `<i>Example:</i> <code>+XXXXXXXXXX</code> or <code>88018XXXXXXXX</code>`,
         {
           parse_mode: 'HTML',
           reply_markup: keyboards.cancelPairing()
@@ -263,8 +263,12 @@ export function registerPairHandlers(bot) {
       clearUserPairingTrackers(telegramId);
 
       const rawText = ctx.message.text.trim();
-      const userMsgId = ctx.message.message_id;
       const chatId = ctx.chat.id;
+
+      // Immediately delete the user's typed phone number text message cleanly right away!
+      try {
+        await ctx.deleteMessage();
+      } catch (e) {}
 
       // Edit prompt message directly to loading state so NO DUPLICATE MESSAGES are created
       if (promptMsgId) {
@@ -276,7 +280,6 @@ export function registerPairHandlers(bot) {
             { parse_mode: 'HTML' }
           );
         } catch (e) {
-          // If editing prompt failed, reply with a new wait message and track it
           const waitMsg = await ctx.reply('⏳ <b>Requesting 8-digit pairing code from WhatsApp...</b>', { parse_mode: 'HTML' });
           if (promptMsgId) { try { await ctx.api.deleteMessage(chatId, promptMsgId); } catch (err) {} }
           promptMsgId = waitMsg.message_id;
@@ -294,12 +297,9 @@ export function registerPairHandlers(bot) {
             isCodeConnected = true;
             clearUserPairingTrackers(telegramId);
 
-            // Purge single prompt card & user input message ONLY AFTER successful connection
+            // Purge prompt card ONLY AFTER successful connection
             if (promptMsgId) {
               try { await ctx.api.deleteMessage(chatId, promptMsgId); } catch (e) {}
-            }
-            if (userMsgId) {
-              try { await ctx.api.deleteMessage(chatId, userMsgId); } catch (e) {}
             }
 
             const maskedPhone = formatMaskedPhone(user?.id);
