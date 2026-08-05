@@ -23,7 +23,7 @@ const httpServer = http.createServer((req, res) => {
   }));
 });
 
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`🌐 Health check & Keep-Alive HTTP server bound to port ${PORT}`);
   startSelfPingLoop();
 });
@@ -44,7 +44,7 @@ function startSelfPingLoop() {
     } catch (e) {
       console.log(`[Keep-Alive] Ping pulse sent to keep server active.`);
     }
-  }, 4 * 60 * 1000); // Pings every 4 minutes (Render free tier suspends at 15 minutes)
+  }, 4 * 60 * 1000); // Pings every 4 minutes
 }
 
 // Process Shutdown Hook to send Server Offline Alerts to Admins
@@ -74,6 +74,15 @@ process.on('SIGINT', () => handleShutdown('SIGINT'));
 process.on('SIGTERM', () => handleShutdown('SIGTERM'));
 process.on('SIGHUP', () => handleShutdown('SIGHUP'));
 
+// Uncaught Exception / Rejection Guard to prevent silent crashes
+process.on('uncaughtException', (err) => {
+  console.error('[System] Uncaught Exception:', err.message || err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[System] Unhandled Rejection:', reason?.message || reason);
+});
+
 async function main() {
   console.log('====================================================');
   console.log('  ⚡ Professional WhatsApp Registration Checker Bot ⚡');
@@ -85,28 +94,45 @@ async function main() {
     process.exit(1);
   }
 
-  // Initialize GitHub Gist Cloud Sync and Database Restoration
-  await dbService.initCloudSync();
+  // Initialize GitHub Gist Cloud Sync and Database Restoration with error catch
+  try {
+    await dbService.initCloudSync();
+  } catch (err) {
+    console.error('[Init] Cloud Sync warning:', err.message);
+  }
 
-  // Restore active WhatsApp sessions from sessions directory
+  // Restore active WhatsApp sessions asynchronously without blocking bot launch
   if (fs.existsSync(config.sessionsDir)) {
-    const folders = fs.readdirSync(config.sessionsDir).filter(f => f.startsWith('session_'));
-    if (folders.length > 0) {
-      console.log(`[Init] Found ${folders.length} saved WhatsApp session(s). Restoring connections...`);
-      for (const folder of folders) {
-        const tgId = folder.replace('session_', '');
-        try {
-          await sessionManager.initSession(tgId);
-          console.log(`[Init] Session restored for TG User: ${tgId}`);
-        } catch (err) {
-          console.error(`[Init] Failed to restore session for ${tgId}:`, err.message);
+    try {
+      const folders = fs.readdirSync(config.sessionsDir).filter(f => f.startsWith('session_'));
+      if (folders.length > 0) {
+        console.log(`[Init] Found ${folders.length} saved WhatsApp session(s). Restoring connections...`);
+        for (const folder of folders) {
+          const tgId = folder.replace('session_', '');
+          sessionManager.initSession(tgId).catch(err => {
+            console.error(`[Init] Non-blocking restore notice for ${tgId}:`, err.message);
+          });
         }
       }
+    } catch (e) {}
+  }
+
+  // Launch Telegram Bot with automatic retry on boot
+  let botStarted = false;
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      await startBot();
+      botStarted = true;
+      break;
+    } catch (err) {
+      console.error(`[Boot] Bot start attempt ${attempt} failed: ${err.message}. Retrying in 3s...`);
+      await new Promise(r => setTimeout(r, 3000));
     }
   }
 
-  // Launch Telegram Bot
-  await startBot();
+  if (!botStarted) {
+    console.error('❌ Failed to start Telegram Bot listener after 5 attempts.');
+  }
 }
 
 main().catch((err) => {
@@ -116,5 +142,4 @@ main().catch((err) => {
   } else {
     console.error('Fatal Application Error:', err);
   }
-  process.exit(1);
 });
