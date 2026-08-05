@@ -51,8 +51,8 @@ export function parseBulkNumbers(textOrBuffer) {
     ? textOrBuffer 
     : textOrBuffer.toString('utf-8');
 
-  // Split by newline, comma, semicolon, or space
-  const lines = content.split(/[\r\n,;]+/);
+  // Split by newline, comma, semicolon, or whitespace (spaces & tabs)
+  const lines = content.split(/[\r\n,;\s]+/);
   const validNumbers = [];
   const invalidEntries = [];
 
