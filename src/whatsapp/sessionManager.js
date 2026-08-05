@@ -84,7 +84,7 @@ export const sessionManager = {
       auth: state,
       printQRInTerminal: false,
       logger,
-      browser: ['Windows', 'Chrome', '120.0.0.0'], // Standard trusted Windows Desktop Chrome browser tuple
+      browser: Browsers.macOS('Desktop'), // Official WhatsApp Desktop application client signature
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 25000,
       emitOwnEvents: false,
