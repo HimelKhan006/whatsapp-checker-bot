@@ -13,8 +13,9 @@ let globalBotInstance = null;
 
 function getActiveAdminIds() {
   const customAdminSetting = dbService.getSetting('custom_admin_ids', '');
-  const customAdminIds = customAdminSetting ? customAdminSetting.split(',').map(Number).filter(Boolean) : [];
-  return [...new Set([...config.adminIds, ...customAdminIds])];
+  const customAdminIds = customAdminSetting ? customAdminSetting.split(',').map(id => String(id).trim()).filter(Boolean) : [];
+  const baseAdminIds = (config.adminIds || []).map(id => String(id).trim()).filter(Boolean);
+  return [...new Set([...baseAdminIds, ...customAdminIds])];
 }
 
 function getFormattedTime() {
@@ -22,7 +23,7 @@ function getFormattedTime() {
   return now.toISOString().replace('T', ' ').slice(0, 19);
 }
 
-// Send Server Online Alert to Admins
+// Send Server Online Alert to Admins (Deduplicated String Admin IDs)
 async function sendServerOnlineAlert(bot) {
   const adminIds = getActiveAdminIds();
   if (adminIds.length === 0) return;
@@ -49,7 +50,7 @@ async function sendServerOnlineAlert(bot) {
   }
 }
 
-// Send Server Offline Alert to Admins (with HTTP fetch fallback)
+// Send Server Offline Alert to Admins (Deduplicated String Admin IDs)
 export async function sendServerOfflineAlert() {
   const adminIds = getActiveAdminIds();
   if (adminIds.length === 0 || !config.botToken) return;
