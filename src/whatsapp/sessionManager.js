@@ -13,9 +13,26 @@ if (!fs.existsSync(config.sessionsDir)) {
 const activeSessions = new Map();
 const sessionStatus = new Map(); // 'disconnected' | 'connecting' | 'connected' | 'qr_ready'
 const reconnectAttempts = new Map();
+let cachedWaVersion = null;
 let autoLogoutListener = null;
 
 const logger = pino({ level: 'silent' });
+
+async function getWaVersion() {
+  if (cachedWaVersion) return cachedWaVersion;
+  try {
+    const vObj = await fetchLatestBaileysVersion();
+    if (vObj && vObj.version) {
+      cachedWaVersion = vObj.version;
+      console.log(`[WA Protocol] Fetched latest WhatsApp Web protocol version: ${cachedWaVersion.join('.')}`);
+      return cachedWaVersion;
+    }
+  } catch (e) {
+    console.log('[WA Protocol] Using fallback WhatsApp Web protocol version.');
+  }
+  cachedWaVersion = [2, 3000, 1015901307];
+  return cachedWaVersion;
+}
 
 export const sessionManager = {
   setAutoLogoutListener(fn) {
@@ -79,14 +96,7 @@ export const sessionManager = {
     sessionStatus.set(key, 'connecting');
 
     const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
-    
-    let version;
-    try {
-      const vObj = await fetchLatestBaileysVersion();
-      version = vObj.version;
-    } catch (e) {
-      version = [2, 3000, 1015901307];
-    }
+    const version = await getWaVersion();
 
     const sock = makeWASocket({
       version,
@@ -96,9 +106,12 @@ export const sessionManager = {
       browser: Browsers.macOS('Chrome'), // Standard macOS Chrome payload for smooth 8-digit pairing code authorization
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 25000,
+      retryRequestDelayMs: 250,
+      maxRetries: 5,
       emitOwnEvents: false,
       markOnlineOnConnect: false,
-      syncFullHistory: false
+      syncFullHistory: false,
+      generateHighQualityLinkPreview: false
     });
 
     activeSessions.set(key, sock);
