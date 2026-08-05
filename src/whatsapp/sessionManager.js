@@ -124,7 +124,8 @@ export const sessionManager = {
       if (connection === 'close') {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-        console.log(`[WA] Session closed for ${key}. Reason code: ${statusCode}, Reconnect: ${shouldReconnect}`);
+        const prevStatus = sessionStatus.get(key);
+        console.log(`[WA] Session closed for ${key}. Reason code: ${statusCode}, Reconnect: ${shouldReconnect}, PrevStatus: ${prevStatus}`);
 
         sessionStatus.set(key, 'disconnected');
         activeSessions.delete(key);
@@ -143,7 +144,8 @@ export const sessionManager = {
             callbacks.onLoggedOut();
           }
 
-          if (autoLogoutListener) {
+          // Trigger autoLogoutListener ONLY if the session was previously fully connected!
+          if (autoLogoutListener && prevStatus === 'connected') {
             try { autoLogoutListener(telegramId); } catch (e) {}
           }
         }
@@ -166,8 +168,8 @@ export const sessionManager = {
       throw new Error('Invalid phone number format. Please include full country code without symbols (e.g. 8801712345678 or 1234567890).');
     }
 
-    // Force purge any old/stale session directory for clean registration
-    await this.logoutSession(telegramId);
+    // Force purge any old/stale session directory silently before starting clean pairing
+    await this.logoutSession(telegramId, true);
 
     const sock = await this.initSession(telegramId, callbacks);
 
@@ -186,9 +188,12 @@ export const sessionManager = {
     return code;
   },
 
-  async logoutSession(telegramId) {
+  async logoutSession(telegramId, silent = false) {
     const key = String(telegramId);
     const sock = activeSessions.get(key);
+    if (silent) {
+      sessionStatus.set(key, 'disconnected');
+    }
     if (sock) {
       try {
         await sock.logout();

@@ -161,7 +161,7 @@ export function registerPairHandlers(bot) {
                 clearUserPairingTrackers(telegramId);
                 if (!isConnected && !sessionManager.isSessionConnected(telegramId)) {
                   console.log(`[WA] QR Code expired for user ${telegramId}`);
-                  await sessionManager.logoutSession(telegramId);
+                  await sessionManager.logoutSession(telegramId, true);
 
                   if (qrSentMsgId) {
                     try { await ctx.api.deleteMessage(ctx.chat.id, qrSentMsgId); } catch (e) {}
@@ -372,7 +372,7 @@ export function registerPairHandlers(bot) {
           userPairingState.delete(telegramId);
           if (!isCodeConnected && !sessionManager.isSessionConnected(telegramId)) {
             console.log(`[WA] Pairing code expired for user ${telegramId}`);
-            await sessionManager.logoutSession(telegramId);
+            await sessionManager.logoutSession(telegramId, true);
 
             // Cleanly delete initial prompt card and user typed text message on expiration
             if (initialPromptMsgId) {
@@ -506,7 +506,7 @@ export function registerPairHandlers(bot) {
     }
 
     if (!sessionManager.isSessionConnected(telegramId)) {
-      await sessionManager.logoutSession(telegramId);
+      await sessionManager.logoutSession(telegramId, true);
     }
 
     const isConnected = sessionManager.isSessionConnected(telegramId);
