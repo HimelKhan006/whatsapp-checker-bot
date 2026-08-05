@@ -84,7 +84,7 @@ export const sessionManager = {
       auth: state,
       printQRInTerminal: false,
       logger,
-      browser: Browsers.ubuntu('Chrome'), // Standard official Baileys Chrome tuple for 100% fast & reliable pairing
+      browser: Browsers.macOS('Desktop'), // Standard macOS Desktop payload recognized cleanly by WhatsApp
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 25000,
       emitOwnEvents: false,
@@ -164,12 +164,12 @@ export const sessionManager = {
 
     const sock = await this.initSession(telegramId, callbacks);
 
-    // Fast WebSocket connection wait (polls every 150ms for ultra-fast response)
+    // Fast WebSocket connection wait (polls every 100ms for ultra-fast response)
     let attempts = 0;
     while (!sock.ws || sock.ws.readyState !== 1) {
-      await new Promise(r => setTimeout(r, 150));
+      await new Promise(r => setTimeout(r, 100));
       attempts++;
-      if (attempts > 50) break; // max 7.5 seconds timeout
+      if (attempts > 50) break; // max 5 seconds timeout
     }
 
     const code = await sock.requestPairingCode(cleanNum);
