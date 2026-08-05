@@ -266,10 +266,7 @@ export function registerPairHandlers(bot) {
       const userMsgId = ctx.message.message_id;
       const chatId = ctx.chat.id;
 
-      // Delete the initial prompt card cleanly so the pairing code card appears in a brand new message!
-      if (initialPromptMsgId) {
-        try { await ctx.api.deleteMessage(chatId, initialPromptMsgId); } catch (e) {}
-      }
+      // Keep initialPromptMsgId visible on screen while user enters code!
 
       // Send brand new message for 8-digit pairing code
       const waitMsg = await ctx.reply('⏳ <b>Requesting 8-digit pairing code from WhatsApp...</b>', { parse_mode: 'HTML' });
@@ -283,7 +280,10 @@ export function registerPairHandlers(bot) {
             isCodeConnected = true;
             clearUserPairingTrackers(telegramId);
 
-            // Cleanly delete pairing code card and user typed phone number text upon connection
+            // DELETE ALL TEMPORARY MESSAGES (initial prompt card, pairing code card, user typed text) ONLY WHEN onConnected FIRES!
+            if (initialPromptMsgId) {
+              try { await ctx.api.deleteMessage(chatId, initialPromptMsgId); } catch (e) {}
+            }
             if (codeSentMsgId) {
               try { await ctx.api.deleteMessage(chatId, codeSentMsgId); } catch (e) {}
             }
