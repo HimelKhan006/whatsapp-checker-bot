@@ -10,6 +10,7 @@ import { sessionManager } from '../whatsapp/sessionManager.js';
 import { keyboards } from './keyboards/inline.js';
 
 let globalBotInstance = null;
+let hasSentOnlineAlert = false;
 
 function getActiveAdminIds() {
   const customAdminSetting = dbService.getSetting('custom_admin_ids', '');
@@ -23,8 +24,11 @@ function getFormattedTime() {
   return now.toISOString().replace('T', ' ').slice(0, 19);
 }
 
-// Send Server Online Alert to Admins (Deduplicated String Admin IDs)
+// Send Server Online Alert to Admins (Guaranteed Exactly ONCE per process boot)
 async function sendServerOnlineAlert(bot) {
+  if (hasSentOnlineAlert) return;
+  hasSentOnlineAlert = true;
+
   const adminIds = getActiveAdminIds();
   if (adminIds.length === 0) return;
 
@@ -122,13 +126,11 @@ export async function startBot() {
 
   console.log('🤖 Starting Telegram Bot listener...');
 
-  // Dispatch Server Online Alert card to all admins
-  sendServerOnlineAlert(bot).catch(err => console.error('Failed to send Server Online Alert:', err));
-
   await bot.start({
     onStart: (botInfo) => {
       console.log(`\n✅ Telegram Bot successfully started as @${botInfo.username}!`);
       console.log('🚀 System is ready to accept commands and process requests.\n');
+      sendServerOnlineAlert(bot).catch(err => console.error('Failed to send Server Online Alert:', err));
     }
   });
 }

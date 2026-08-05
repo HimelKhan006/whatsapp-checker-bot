@@ -117,22 +117,8 @@ async function main() {
     } catch (e) {}
   }
 
-  // Launch Telegram Bot with automatic retry on boot
-  let botStarted = false;
-  for (let attempt = 1; attempt <= 5; attempt++) {
-    try {
-      await startBot();
-      botStarted = true;
-      break;
-    } catch (err) {
-      console.error(`[Boot] Bot start attempt ${attempt} failed: ${err.message}. Retrying in 3s...`);
-      await new Promise(r => setTimeout(r, 3000));
-    }
-  }
-
-  if (!botStarted) {
-    console.error('❌ Failed to start Telegram Bot listener after 5 attempts.');
-  }
+  // Launch Telegram Bot cleanly (Grammy handles its own polling loop)
+  await startBot();
 }
 
 main().catch((err) => {
