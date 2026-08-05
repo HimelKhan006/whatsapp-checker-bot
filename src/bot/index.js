@@ -126,6 +126,15 @@ export async function startBot() {
 
   console.log('🤖 Starting Telegram Bot listener...');
 
+  // Verify connection with Telegram API & send Online Alert card instantly
+  try {
+    const me = await bot.api.getMe();
+    console.log(`✅ Connected to Telegram API as @${me.username}`);
+    sendServerOnlineAlert(bot).catch(err => console.error('Online alert notice:', err));
+  } catch (e) {
+    console.error('Telegram API connection check notice:', e.message);
+  }
+
   // Gracefully handle 409 Conflict on startup when Render replaces containers
   let botStartedSuccessfully = false;
   for (let attempt = 1; attempt <= 10; attempt++) {
@@ -133,9 +142,8 @@ export async function startBot() {
       await bot.start({
         onStart: (botInfo) => {
           botStartedSuccessfully = true;
-          console.log(`\n✅ Telegram Bot successfully started as @${botInfo.username}!`);
+          console.log(`\n✅ Telegram Bot polling active as @${botInfo.username}!`);
           console.log('🚀 System is ready to accept commands and process requests.\n');
-          sendServerOnlineAlert(bot).catch(err => console.error('Failed to send Server Online Alert:', err));
         }
       });
       break;
