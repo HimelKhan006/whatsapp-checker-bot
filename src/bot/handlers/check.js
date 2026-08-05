@@ -261,7 +261,7 @@ async function runBulkCheckProcess(ctx, telegramId, numbers, statusMsgId) {
     delayMs: customDelay,
     onProgress: async (p) => {
       const now = Date.now();
-      if (now - lastEditTime > 1200 || p.current === p.total) {
+      if (now - lastEditTime > 400 || p.current === p.total) {
         lastEditTime = now;
         const pct = Math.floor((p.current / p.total) * 100);
         const progressBar = createProgressBar(pct);
@@ -271,7 +271,7 @@ async function runBulkCheckProcess(ctx, telegramId, numbers, statusMsgId) {
           `${progressBar} <b>${pct}%</b> (${p.current}/${p.total})\n\n` +
           `✅ <b>Registered WA:</b> <code>${p.registered}</code>\n` +
           `❌ <b>Unregistered:</b> <code>${p.unregistered}</code>\n\n` +
-          `⚡ <i>Delay: ${customDelay}ms (Ultra-Fast Batching)</i>`;
+          `⚡ <i>Delay: ${customDelay}ms (Ultra-Fast 50-Batch Engine)</i>`;
 
         try {
           await ctx.api.editMessageText(ctx.chat.id, statusMsgId, progressText, { parse_mode: 'HTML' });
