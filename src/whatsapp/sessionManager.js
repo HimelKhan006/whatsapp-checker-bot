@@ -84,7 +84,7 @@ export const sessionManager = {
       auth: state,
       printQRInTerminal: false,
       logger,
-      browser: Browsers.macOS('Desktop'), // Official WhatsApp Desktop application client signature
+      browser: ['Ubuntu', 'Chrome', '20.0.04'], // Standard 100% stable Baileys browser tuple for pairing codes & QR
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 25000,
       emitOwnEvents: false,
