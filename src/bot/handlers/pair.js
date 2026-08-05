@@ -268,7 +268,7 @@ export function registerPairHandlers(bot) {
 
       let activeCardMsgId = null;
 
-      // Try editing initial prompt card directly into loading state to keep it on screen
+      // Try editing prompt card directly into loading state
       if (initialPromptMsgId) {
         try {
           await ctx.api.editMessageText(
@@ -279,7 +279,8 @@ export function registerPairHandlers(bot) {
           );
           activeCardMsgId = initialPromptMsgId;
         } catch (e) {
-          // DO NOT delete initialPromptMsgId here! Keep it visible until onConnected
+          // If editing prompt card fails, DELETE prompt card immediately so TWO CARDS NEVER APPEAR
+          try { await ctx.api.deleteMessage(chatId, initialPromptMsgId); } catch (err) {}
           const waitMsg = await ctx.reply('⏳ <b>Requesting 8-digit pairing code from WhatsApp...</b>', { parse_mode: 'HTML' });
           activeCardMsgId = waitMsg.message_id;
         }
@@ -296,12 +297,9 @@ export function registerPairHandlers(bot) {
             isCodeConnected = true;
             clearUserPairingTrackers(telegramId);
 
-            // Cleanly delete temporary card(s) and user text message ONLY NOW upon successful connection!
+            // Delete active pairing code card AND user typed text message upon connection
             if (activeCardMsgId) {
               try { await ctx.api.deleteMessage(chatId, activeCardMsgId); } catch (e) {}
-            }
-            if (initialPromptMsgId && initialPromptMsgId !== activeCardMsgId) {
-              try { await ctx.api.deleteMessage(chatId, initialPromptMsgId); } catch (e) {}
             }
             if (userMsgId) {
               try { await ctx.api.deleteMessage(chatId, userMsgId); } catch (e) {}
@@ -327,7 +325,7 @@ export function registerPairHandlers(bot) {
         let secondsLeft = 60;
         const initialBar = createCountdownBar(secondsLeft, 60);
 
-        // Edit active card to display the 8-digit pairing code (stays visible until onConnected!)
+        // Edit active card to display the 8-digit pairing code (strictly 1 single card in chat!)
         await ctx.api.editMessageText(
           chatId,
           activeCardMsgId,
