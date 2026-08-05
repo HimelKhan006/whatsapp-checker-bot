@@ -226,7 +226,7 @@ export function registerPairHandlers(bot) {
     }
 
     const currentMsgId = ctx.callbackQuery?.message?.message_id;
-    userPairingState.set(telegramId, { step: 'AWAITING_PHONE', initialPromptMsgId: currentMsgId });
+    userPairingState.set(telegramId, { step: 'AWAITING_PHONE', promptMsgId: currentMsgId });
 
     try {
       await ctx.editMessageText(
@@ -248,7 +248,7 @@ export function registerPairHandlers(bot) {
           reply_markup: keyboards.cancelPairing()
         }
       );
-      userPairingState.set(telegramId, { step: 'AWAITING_PHONE', initialPromptMsgId: sent.message_id });
+      userPairingState.set(telegramId, { step: 'AWAITING_PHONE', promptMsgId: sent.message_id });
     }
   });
 
@@ -258,17 +258,33 @@ export function registerPairHandlers(bot) {
     const pairingState = userPairingState.get(telegramId);
 
     if (pairingState && pairingState.step === 'AWAITING_PHONE') {
-      const initialPromptMsgId = pairingState.initialPromptMsgId;
+      let promptMsgId = pairingState.promptMsgId;
       userPairingState.delete(telegramId);
       clearUserPairingTrackers(telegramId);
 
       const rawText = ctx.message.text.trim();
       const userMsgId = ctx.message.message_id;
+      const chatId = ctx.chat.id;
 
-      let codeSentMsgId = null;
-
-      const waitMsg = await ctx.reply('⏳ <b>Requesting 8-digit pairing code from WhatsApp...</b>', { parse_mode: 'HTML' });
-      codeSentMsgId = waitMsg.message_id;
+      // Edit prompt message directly to loading state so NO DUPLICATE MESSAGES are created
+      if (promptMsgId) {
+        try {
+          await ctx.api.editMessageText(
+            chatId,
+            promptMsgId,
+            '⏳ <b>Requesting 8-digit pairing code from WhatsApp...</b>',
+            { parse_mode: 'HTML' }
+          );
+        } catch (e) {
+          // If editing prompt failed, reply with a new wait message and track it
+          const waitMsg = await ctx.reply('⏳ <b>Requesting 8-digit pairing code from WhatsApp...</b>', { parse_mode: 'HTML' });
+          if (promptMsgId) { try { await ctx.api.deleteMessage(chatId, promptMsgId); } catch (err) {} }
+          promptMsgId = waitMsg.message_id;
+        }
+      } else {
+        const waitMsg = await ctx.reply('⏳ <b>Requesting 8-digit pairing code from WhatsApp...</b>', { parse_mode: 'HTML' });
+        promptMsgId = waitMsg.message_id;
+      }
 
       try {
         let isCodeConnected = false;
@@ -278,19 +294,17 @@ export function registerPairHandlers(bot) {
             isCodeConnected = true;
             clearUserPairingTrackers(telegramId);
 
-            // Cleanly purge all temporary pairing messages ONLY AFTER pairing is successfully completed!
-            if (codeSentMsgId) {
-              try { await ctx.api.deleteMessage(ctx.chat.id, codeSentMsgId); } catch (e) {}
+            // Purge single prompt card & user input message ONLY AFTER successful connection
+            if (promptMsgId) {
+              try { await ctx.api.deleteMessage(chatId, promptMsgId); } catch (e) {}
             }
             if (userMsgId) {
-              try { await ctx.api.deleteMessage(ctx.chat.id, userMsgId); } catch (e) {}
-            }
-            if (initialPromptMsgId) {
-              try { await ctx.api.deleteMessage(ctx.chat.id, initialPromptMsgId); } catch (e) {}
+              try { await ctx.api.deleteMessage(chatId, userMsgId); } catch (e) {}
             }
 
             const maskedPhone = formatMaskedPhone(user?.id);
-            await ctx.reply(
+            await ctx.api.sendMessage(
+              chatId,
               `🎉 <b>WhatsApp Account Paired Successfully!</b>\n\n` +
               `<b>Connected Account:</b> <code>${maskedPhone}</code>\n` +
               `You are now ready to start checking numbers!`,
@@ -308,9 +322,10 @@ export function registerPairHandlers(bot) {
         let secondsLeft = 60;
         const initialBar = createCountdownBar(secondsLeft, 60);
 
-        const codeMsg = await ctx.api.editMessageText(
-          ctx.chat.id,
-          waitMsg.message_id,
+        // Edit the single prompt message to display the 8-digit pairing code
+        await ctx.api.editMessageText(
+          chatId,
+          promptMsgId,
           `🔑 <b>Your WhatsApp 8-Digit Pairing Code:</b>\n\n` +
           `<code>${formattedCode}</code>\n\n` +
           `<b>Instructions to link your phone:</b>\n` +
@@ -325,7 +340,6 @@ export function registerPairHandlers(bot) {
             reply_markup: keyboards.cancelPairing()
           }
         );
-        codeSentMsgId = codeMsg.message_id;
 
         // Interval to update pairing code expiration progress bar
         const interval = setInterval(async () => {
@@ -334,8 +348,8 @@ export function registerPairHandlers(bot) {
             const currentBar = createCountdownBar(secondsLeft, 60);
             try {
               await ctx.api.editMessageText(
-                ctx.chat.id,
-                codeSentMsgId,
+                chatId,
+                promptMsgId,
                 `🔑 <b>Your WhatsApp 8-Digit Pairing Code:</b>\n\n` +
                 `<code>${formattedCode}</code>\n\n` +
                 `<b>Instructions to link your phone:</b>\n` +
@@ -364,8 +378,8 @@ export function registerPairHandlers(bot) {
 
             try {
               await ctx.api.editMessageText(
-                ctx.chat.id,
-                codeSentMsgId,
+                chatId,
+                promptMsgId,
                 `⏱️ <b>WhatsApp Pairing Code Expired</b>\n\n` +
                 `The 8-digit pairing code has expired.\n` +
                 `Click <b>Request New Code</b> below to generate a fresh pairing code.`,
@@ -381,15 +395,19 @@ export function registerPairHandlers(bot) {
         activePairingTimers.set(telegramId, timer);
       } catch (err) {
         clearUserPairingTrackers(telegramId);
-        await ctx.api.editMessageText(
-          ctx.chat.id,
-          waitMsg.message_id,
-          `❌ <b>Pairing Code Error:</b> ${err.message}`,
-          {
-            parse_mode: 'HTML',
-            reply_markup: keyboards.backToMain()
-          }
-        );
+        try {
+          await ctx.api.editMessageText(
+            chatId,
+            promptMsgId,
+            `❌ <b>Pairing Code Error:</b> ${err.message}`,
+            {
+              parse_mode: 'HTML',
+              reply_markup: keyboards.backToMain()
+            }
+          );
+        } catch (e) {
+          await ctx.reply(`❌ <b>Pairing Code Error:</b> ${err.message}`, { parse_mode: 'HTML' });
+        }
       }
       return;
     }
