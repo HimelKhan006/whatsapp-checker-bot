@@ -84,7 +84,7 @@ export const sessionManager = {
       auth: state,
       printQRInTerminal: false,
       logger,
-      browser: Browsers.macOS('Desktop'), // Standard macOS Desktop payload recognized cleanly by WhatsApp
+      browser: ['Ubuntu', 'Chrome', '20.0.04'], // Standard 100% Baileys compliant browser tuple for smooth device linking
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 25000,
       emitOwnEvents: false,
@@ -164,7 +164,7 @@ export const sessionManager = {
 
     const sock = await this.initSession(telegramId, callbacks);
 
-    // Fast WebSocket connection wait (polls every 100ms for ultra-fast response)
+    // Wait until WebSocket connection is open (polling every 100ms)
     let attempts = 0;
     while (!sock.ws || sock.ws.readyState !== 1) {
       await new Promise(r => setTimeout(r, 100));
