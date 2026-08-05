@@ -9,9 +9,10 @@ if (!fs.existsSync(config.sessionsDir)) {
   fs.mkdirSync(config.sessionsDir, { recursive: true });
 }
 
-// Map of active WhatsApp socket instances keyed by telegramId
+// Map of active WhatsApp socket instances & reconnect attempts keyed by telegramId
 const activeSessions = new Map();
 const sessionStatus = new Map(); // 'disconnected' | 'connecting' | 'connected' | 'qr_ready'
+const reconnectAttempts = new Map();
 let autoLogoutListener = null;
 
 const logger = pino({ level: 'silent' });
@@ -121,6 +122,7 @@ export const sessionManager = {
 
       if (connection === 'open') {
         sessionStatus.set(key, 'connected');
+        reconnectAttempts.delete(key);
         console.log(`[WA] Session connected for TG User: ${key}`);
         if (callbacks.onConnected) {
           callbacks.onConnected(sock.user);
@@ -140,11 +142,16 @@ export const sessionManager = {
         activeSessions.delete(key);
 
         if (shouldReconnect) {
-          console.log(`[WA] Auto-reconnecting for ${key}...`);
+          const attempts = (reconnectAttempts.get(key) || 0) + 1;
+          reconnectAttempts.set(key, attempts);
+          const backoffDelay = Math.min(3000 * Math.pow(1.4, attempts - 1), 30000);
+          console.log(`[WA] Auto-reconnecting for ${key} (Attempt ${attempts}, backoff ${Math.round(backoffDelay / 1000)}s)...`);
+
           setTimeout(() => {
             this.initSession(telegramId, callbacks).catch(err => console.error('[WA] Reconnect error:', err));
-          }, 3000);
+          }, backoffDelay);
         } else {
+          reconnectAttempts.delete(key);
           try {
             fs.rmSync(sessionPath, { recursive: true, force: true });
           } catch (e) {}
@@ -203,6 +210,7 @@ export const sessionManager = {
 
   async logoutSession(telegramId, silent = false) {
     const key = String(telegramId);
+    reconnectAttempts.delete(key);
     const sock = activeSessions.get(key);
     if (silent) {
       sessionStatus.set(key, 'disconnected');

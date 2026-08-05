@@ -93,6 +93,12 @@ export function createBot() {
   const bot = new Bot(config.botToken);
   globalBotInstance = bot;
 
+  // Global Grammy Error Handler for Network & Bot Resiliency
+  bot.catch((err) => {
+    const ctx = err.ctx;
+    console.error(`[Bot Error] Notice handling update ${ctx?.update?.update_id}:`, err.error?.message || err.error);
+  });
+
   // Set Auto Logout Push Notifier
   sessionManager.setAutoLogoutListener(async (telegramId) => {
     try {
