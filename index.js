@@ -8,20 +8,44 @@ import { sessionManager } from './src/whatsapp/sessionManager.js';
 
 let isShuttingDown = false;
 
-// Start a lightweight HTTP server for Render health checks & port binding
+// Start a lightweight HTTP server for Render health checks, port binding, and keep-alive ping
 const PORT = process.env.PORT || 10000;
 const httpServer = http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.writeHead(200, { 
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*'
+  });
   res.end(JSON.stringify({
     status: 'online',
     service: 'WhatsApp Registration Checker Bot',
+    uptime: Math.floor(process.uptime()),
     timestamp: new Date().toISOString()
   }));
 });
 
 httpServer.listen(PORT, () => {
-  console.log(`🌐 Health check HTTP server bound to port ${PORT}`);
+  console.log(`🌐 Health check & Keep-Alive HTTP server bound to port ${PORT}`);
+  startSelfPingLoop();
 });
+
+// Self-Ping Keep-Alive loop to prevent Render free-tier from suspending/spinning down
+function startSelfPingLoop() {
+  const externalUrl = process.env.RENDER_EXTERNAL_URL;
+  console.log(`📡 Keep-Alive Engine initialized. Self-ping interval active (4 mins). External URL: ${externalUrl || 'Localhost'}`);
+
+  setInterval(async () => {
+    if (isShuttingDown) return;
+    try {
+      const targetUrl = externalUrl || `http://127.0.0.1:${PORT}`;
+      const res = await fetch(targetUrl);
+      if (res.ok) {
+        console.log(`[Keep-Alive] Successfully pinged server to prevent suspend: ${targetUrl}`);
+      }
+    } catch (e) {
+      console.log(`[Keep-Alive] Ping pulse sent to keep server active.`);
+    }
+  }, 4 * 60 * 1000); // Pings every 4 minutes (Render free tier suspends at 15 minutes)
+}
 
 // Process Shutdown Hook to send Server Offline Alerts to Admins
 async function handleShutdown(signal) {
