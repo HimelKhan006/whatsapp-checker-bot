@@ -147,7 +147,7 @@ export function registerPairHandlers(bot) {
                         `1. Open WhatsApp on your phone.\n` +
                         `2. Tap <b>Settings</b> > <b>Linked Devices</b> > <b>Link a Device</b>.\n` +
                         `3. Point your camera at this QR Code.\n\n` +
-                        `⏱️ <b>Expiration Countdown:</b>\n<code>${currentBar}</code>`,
+                        `⏱️ <b>Expiration Countdown:</b>\n<code>${initialBar}</code>`,
                       parse_mode: 'HTML',
                       reply_markup: keyboards.cancelPairing()
                     });
@@ -266,28 +266,14 @@ export function registerPairHandlers(bot) {
       const userMsgId = ctx.message.message_id;
       const chatId = ctx.chat.id;
 
-      let activeCardMsgId = null;
-
-      // Try editing prompt card directly into loading state
+      // IMMEDIATELY delete initial prompt card so it CANNOT stay behind on screen!
       if (initialPromptMsgId) {
-        try {
-          await ctx.api.editMessageText(
-            chatId,
-            initialPromptMsgId,
-            '⏳ <b>Requesting 8-digit pairing code from WhatsApp...</b>',
-            { parse_mode: 'HTML' }
-          );
-          activeCardMsgId = initialPromptMsgId;
-        } catch (e) {
-          // If editing prompt card fails, DELETE prompt card immediately so TWO CARDS NEVER APPEAR
-          try { await ctx.api.deleteMessage(chatId, initialPromptMsgId); } catch (err) {}
-          const waitMsg = await ctx.reply('⏳ <b>Requesting 8-digit pairing code from WhatsApp...</b>', { parse_mode: 'HTML' });
-          activeCardMsgId = waitMsg.message_id;
-        }
-      } else {
-        const waitMsg = await ctx.reply('⏳ <b>Requesting 8-digit pairing code from WhatsApp...</b>', { parse_mode: 'HTML' });
-        activeCardMsgId = waitMsg.message_id;
+        try { await ctx.api.deleteMessage(chatId, initialPromptMsgId); } catch (e) {}
       }
+
+      // Send the ONE single active pairing code message
+      const waitMsg = await ctx.reply('⏳ <b>Requesting 8-digit pairing code from WhatsApp...</b>', { parse_mode: 'HTML' });
+      const activeCardMsgId = waitMsg.message_id;
 
       try {
         let isCodeConnected = false;
@@ -297,7 +283,7 @@ export function registerPairHandlers(bot) {
             isCodeConnected = true;
             clearUserPairingTrackers(telegramId);
 
-            // Delete active pairing code card AND user typed text message upon connection
+            // Cleanly delete pairing code card AND user typed text message upon connection
             if (activeCardMsgId) {
               try { await ctx.api.deleteMessage(chatId, activeCardMsgId); } catch (e) {}
             }
