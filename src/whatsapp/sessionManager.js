@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import pino from 'pino';
 import { config } from '../config.js';
+import { dbService } from '../db/database.js';
 
 if (!fs.existsSync(config.sessionsDir)) {
   fs.mkdirSync(config.sessionsDir, { recursive: true });
@@ -101,7 +102,12 @@ export const sessionManager = {
 
     activeSessions.set(key, sock);
 
-    sock.ev.on('creds.update', saveCreds);
+    sock.ev.on('creds.update', async () => {
+      await saveCreds();
+      try {
+        dbService.triggerCloudSync();
+      } catch (e) {}
+    });
 
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update;
@@ -119,6 +125,9 @@ export const sessionManager = {
         if (callbacks.onConnected) {
           callbacks.onConnected(sock.user);
         }
+        try {
+          dbService.triggerCloudSync();
+        } catch (e) {}
       }
 
       if (connection === 'close') {
@@ -148,6 +157,10 @@ export const sessionManager = {
           if (autoLogoutListener && prevStatus === 'connected') {
             try { autoLogoutListener(telegramId); } catch (e) {}
           }
+
+          try {
+            dbService.triggerCloudSync();
+          } catch (e) {}
         }
 
         if (callbacks.onClose) {
@@ -209,6 +222,9 @@ export const sessionManager = {
         fs.rmSync(sessionPath, { recursive: true, force: true });
       } catch (e) {}
     }
+    try {
+      dbService.triggerCloudSync();
+    } catch (e) {}
   },
 
   getActiveSessionsCount() {
