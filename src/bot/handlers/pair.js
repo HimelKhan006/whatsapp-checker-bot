@@ -189,12 +189,9 @@ export function registerPairHandlers(bot) {
           isConnected = true;
           clearUserPairingTrackers(telegramId);
 
-          if (qrSentMsgId) {
-            try { await ctx.api.deleteMessage(ctx.chat.id, qrSentMsgId); } catch (e) {}
-          }
-
           const maskedPhone = formatMaskedPhone(user?.id);
 
+          // Send success card INSTANTLY in real-time
           await ctx.reply(
             `🎉 <b>WhatsApp Account Paired Successfully!</b>\n\n` +
             `<b>Connected Account:</b> <code>${maskedPhone}</code>\n` +
@@ -204,6 +201,10 @@ export function registerPairHandlers(bot) {
               reply_markup: keyboards.mainMenu(ctx.state.isAdmin, true)
             }
           );
+
+          if (qrSentMsgId) {
+            try { await ctx.api.deleteMessage(ctx.chat.id, qrSentMsgId); } catch (e) {}
+          }
         },
         onLoggedOut: async () => {
           clearUserPairingTrackers(telegramId);
@@ -281,15 +282,9 @@ export function registerPairHandlers(bot) {
             clearUserPairingTrackers(telegramId);
             userPairingState.delete(telegramId);
 
-            // Cleanly delete pairing code card and user typed phone number text upon connection
-            if (codeSentMsgId) {
-              try { await ctx.api.deleteMessage(chatId, codeSentMsgId); } catch (e) {}
-            }
-            if (userMsgId) {
-              try { await ctx.api.deleteMessage(chatId, userMsgId); } catch (e) {}
-            }
-
             const maskedPhone = formatMaskedPhone(user?.id);
+
+            // 1. Send the Success Card INSTANTLY in real-time so the user sees it immediately!
             await ctx.api.sendMessage(
               chatId,
               `🎉 <b>WhatsApp Account Paired Successfully!</b>\n\n` +
@@ -299,7 +294,18 @@ export function registerPairHandlers(bot) {
                 parse_mode: 'HTML',
                 reply_markup: keyboards.mainMenu(ctx.state.isAdmin, true)
               }
-            );
+            ).catch(() => {});
+
+            // 2. Cleanly delete temporary pairing cards and user typed text right after
+            if (initialPromptMsgId) {
+              try { await ctx.api.deleteMessage(chatId, initialPromptMsgId); } catch (e) {}
+            }
+            if (codeSentMsgId) {
+              try { await ctx.api.deleteMessage(chatId, codeSentMsgId); } catch (e) {}
+            }
+            if (userMsgId) {
+              try { await ctx.api.deleteMessage(chatId, userMsgId); } catch (e) {}
+            }
           }
         });
         
