@@ -258,7 +258,7 @@ export function registerPairHandlers(bot) {
     const pairingState = userPairingState.get(telegramId);
 
     if (pairingState && pairingState.step === 'AWAITING_PHONE') {
-      let promptMsgId = pairingState.promptMsgId;
+      const initialPromptMsgId = pairingState.promptMsgId;
       userPairingState.delete(telegramId);
       clearUserPairingTrackers(telegramId);
 
@@ -266,23 +266,26 @@ export function registerPairHandlers(bot) {
       const userMsgId = ctx.message.message_id;
       const chatId = ctx.chat.id;
 
-      // Edit prompt card directly into loading state (keeps it on screen during pairing!)
-      if (promptMsgId) {
+      let activeCardMsgId = null;
+
+      // Try editing initial prompt card directly into loading state to keep it on screen
+      if (initialPromptMsgId) {
         try {
           await ctx.api.editMessageText(
             chatId,
-            promptMsgId,
+            initialPromptMsgId,
             '⏳ <b>Requesting 8-digit pairing code from WhatsApp...</b>',
             { parse_mode: 'HTML' }
           );
+          activeCardMsgId = initialPromptMsgId;
         } catch (e) {
+          // DO NOT delete initialPromptMsgId here! Keep it visible until onConnected
           const waitMsg = await ctx.reply('⏳ <b>Requesting 8-digit pairing code from WhatsApp...</b>', { parse_mode: 'HTML' });
-          if (promptMsgId) { try { await ctx.api.deleteMessage(chatId, promptMsgId); } catch (err) {} }
-          promptMsgId = waitMsg.message_id;
+          activeCardMsgId = waitMsg.message_id;
         }
       } else {
         const waitMsg = await ctx.reply('⏳ <b>Requesting 8-digit pairing code from WhatsApp...</b>', { parse_mode: 'HTML' });
-        promptMsgId = waitMsg.message_id;
+        activeCardMsgId = waitMsg.message_id;
       }
 
       try {
@@ -293,36 +296,23 @@ export function registerPairHandlers(bot) {
             isCodeConnected = true;
             clearUserPairingTrackers(telegramId);
 
-            // Cleanly delete user's typed text message
+            // Cleanly delete temporary card(s) and user text message ONLY NOW upon successful connection!
+            if (activeCardMsgId) {
+              try { await ctx.api.deleteMessage(chatId, activeCardMsgId); } catch (e) {}
+            }
+            if (initialPromptMsgId && initialPromptMsgId !== activeCardMsgId) {
+              try { await ctx.api.deleteMessage(chatId, initialPromptMsgId); } catch (e) {}
+            }
             if (userMsgId) {
               try { await ctx.api.deleteMessage(chatId, userMsgId); } catch (e) {}
             }
 
             const maskedPhone = formatMaskedPhone(user?.id);
-            const successText = 
-              `🎉 <b>WhatsApp Account Paired Successfully!</b>\n\n` +
-              `<b>Connected Account:</b> <code>${maskedPhone}</code>\n` +
-              `You are now ready to start checking numbers!`;
-
-            // Transform the pairing code card DIRECTLY into the success card in-place!
-            if (promptMsgId) {
-              try {
-                await ctx.api.editMessageText(
-                  chatId,
-                  promptMsgId,
-                  successText,
-                  {
-                    parse_mode: 'HTML',
-                    reply_markup: keyboards.mainMenu(ctx.state.isAdmin, true)
-                  }
-                );
-                return;
-              } catch (e) {}
-            }
-
             await ctx.api.sendMessage(
               chatId,
-              successText,
+              `🎉 <b>WhatsApp Account Paired Successfully!</b>\n\n` +
+              `<b>Connected Account:</b> <code>${maskedPhone}</code>\n` +
+              `You are now ready to start checking numbers!`,
               {
                 parse_mode: 'HTML',
                 reply_markup: keyboards.mainMenu(ctx.state.isAdmin, true)
@@ -337,10 +327,10 @@ export function registerPairHandlers(bot) {
         let secondsLeft = 60;
         const initialBar = createCountdownBar(secondsLeft, 60);
 
-        // Edit prompt card into the 8-digit pairing code card (kept visible until connected!)
+        // Edit active card to display the 8-digit pairing code (stays visible until onConnected!)
         await ctx.api.editMessageText(
           chatId,
-          promptMsgId,
+          activeCardMsgId,
           `🔑 <b>Your WhatsApp 8-Digit Pairing Code:</b>\n\n` +
           `<code>${formattedCode}</code>\n\n` +
           `<b>Instructions to link your phone:</b>\n` +
@@ -364,7 +354,7 @@ export function registerPairHandlers(bot) {
             try {
               await ctx.api.editMessageText(
                 chatId,
-                promptMsgId,
+                activeCardMsgId,
                 `🔑 <b>Your WhatsApp 8-Digit Pairing Code:</b>\n\n` +
                 `<code>${formattedCode}</code>\n\n` +
                 `<b>Instructions to link your phone:</b>\n` +
@@ -373,7 +363,7 @@ export function registerPairHandlers(bot) {
                 `3. Tap <b>Link a Device</b>.\n` +
                 `4. Tap <b>"Link with phone number instead"</b> at the bottom.\n` +
                 `5. Enter the code: <code>${formattedCode}</code>\n\n` +
-                `⏱️ <b>Expiration Countdown:</b>\n<code>${initialBar}</code>`,
+                `⏱️ <b>Expiration Countdown:</b>\n<code>${currentBar}</code>`,
                 {
                   parse_mode: 'HTML',
                   reply_markup: keyboards.cancelPairing()
@@ -394,7 +384,7 @@ export function registerPairHandlers(bot) {
             try {
               await ctx.api.editMessageText(
                 chatId,
-                promptMsgId,
+                activeCardMsgId,
                 `⏱️ <b>WhatsApp Pairing Code Expired</b>\n\n` +
                 `The 8-digit pairing code has expired.\n` +
                 `Click <b>Request New Code</b> below to generate a fresh pairing code.`,
@@ -413,7 +403,7 @@ export function registerPairHandlers(bot) {
         try {
           await ctx.api.editMessageText(
             chatId,
-            promptMsgId,
+            activeCardMsgId,
             `❌ <b>Pairing Code Error:</b> ${err.message}`,
             {
               parse_mode: 'HTML',
