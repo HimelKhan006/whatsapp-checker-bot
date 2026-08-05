@@ -259,18 +259,19 @@ export function registerPairHandlers(bot) {
 
     if (pairingState && pairingState.step === 'AWAITING_PHONE') {
       const initialPromptMsgId = pairingState.promptMsgId;
-      userPairingState.delete(telegramId);
-      clearUserPairingTrackers(telegramId);
-
       const rawText = ctx.message.text.trim();
       const userMsgId = ctx.message.message_id;
       const chatId = ctx.chat.id;
 
-      // Keep initialPromptMsgId visible on screen while user enters code!
+      // Update pairing state with active userMsgId
+      userPairingState.set(telegramId, { ...pairingState, step: 'GENERATING_CODE', userMsgId });
+      clearUserPairingTrackers(telegramId);
 
       // Send brand new message for 8-digit pairing code
       const waitMsg = await ctx.reply('⏳ <b>Requesting 8-digit pairing code from WhatsApp...</b>', { parse_mode: 'HTML' });
       const codeSentMsgId = waitMsg.message_id;
+
+      userPairingState.set(telegramId, { initialPromptMsgId, codeSentMsgId, userMsgId, step: 'WAITING_FOR_CONNECT' });
 
       try {
         let isCodeConnected = false;
@@ -279,6 +280,7 @@ export function registerPairHandlers(bot) {
           onConnected: async (user) => {
             isCodeConnected = true;
             clearUserPairingTrackers(telegramId);
+            userPairingState.delete(telegramId);
 
             // DELETE ALL TEMPORARY MESSAGES (initial prompt card, pairing code card, user typed text) ONLY WHEN onConnected FIRES!
             if (initialPromptMsgId) {
@@ -361,6 +363,7 @@ export function registerPairHandlers(bot) {
         // Set 60-second expiration timer for pairing code
         const timer = setTimeout(async () => {
           clearUserPairingTrackers(telegramId);
+          userPairingState.delete(telegramId);
           if (!isCodeConnected && !sessionManager.isSessionConnected(telegramId)) {
             console.log(`[WA] Pairing code expired for user ${telegramId}`);
             await sessionManager.logoutSession(telegramId);
@@ -384,6 +387,7 @@ export function registerPairHandlers(bot) {
         activePairingTimers.set(telegramId, timer);
       } catch (err) {
         clearUserPairingTrackers(telegramId);
+        userPairingState.delete(telegramId);
         try {
           await ctx.api.editMessageText(
             chatId,
@@ -459,13 +463,23 @@ export function registerPairHandlers(bot) {
     }
   });
 
-  // Instant Cancel Pairing (Restores/edits the SAME WhatsApp Session Management card)
+  // Instant Cancel Pairing (Purges prompt, code card, and user text message automatically!)
   bot.callbackQuery(['action_cancel_pairing', 'action_cancel'], async (ctx) => {
     await ctx.answerCallbackQuery('Pairing cancelled.').catch(() => {});
     const telegramId = ctx.from.id;
+    const chatId = ctx.chat.id;
 
     clearUserPairingTrackers(telegramId);
+    const pairingState = userPairingState.get(telegramId);
     userPairingState.delete(telegramId);
+
+    // Purge ALL active pairing cards and user typed text message automatically!
+    if (pairingState) {
+      if (pairingState.initialPromptMsgId) { try { await ctx.api.deleteMessage(chatId, pairingState.initialPromptMsgId); } catch (e) {} }
+      if (pairingState.promptMsgId) { try { await ctx.api.deleteMessage(chatId, pairingState.promptMsgId); } catch (e) {} }
+      if (pairingState.codeSentMsgId) { try { await ctx.api.deleteMessage(chatId, pairingState.codeSentMsgId); } catch (e) {} }
+      if (pairingState.userMsgId) { try { await ctx.api.deleteMessage(chatId, pairingState.userMsgId); } catch (e) {} }
+    }
 
     if (!sessionManager.isSessionConnected(telegramId)) {
       await sessionManager.logoutSession(telegramId);

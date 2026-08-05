@@ -84,10 +84,12 @@ export const sessionManager = {
       auth: state,
       printQRInTerminal: false,
       logger,
-      browser: ['Ubuntu', 'Chrome', '20.0.04'], // Standard 100% stable Baileys browser tuple for pairing codes & QR
+      browser: Browsers.ubuntu('Chrome'), // Standard official Baileys Chrome tuple for 100% fast & reliable pairing
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 25000,
       emitOwnEvents: false,
+      markOnlineOnConnect: false,
+      syncFullHistory: false
     });
 
     activeSessions.set(key, sock);
@@ -162,12 +164,12 @@ export const sessionManager = {
 
     const sock = await this.initSession(telegramId, callbacks);
 
-    // Wait until WebSocket connection is open (up to 10 seconds)
+    // Fast WebSocket connection wait (polls every 150ms for ultra-fast response)
     let attempts = 0;
     while (!sock.ws || sock.ws.readyState !== 1) {
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, 150));
       attempts++;
-      if (attempts > 20) break;
+      if (attempts > 50) break; // max 7.5 seconds timeout
     }
 
     const code = await sock.requestPairingCode(cleanNum);
