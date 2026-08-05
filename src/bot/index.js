@@ -126,11 +126,23 @@ export async function startBot() {
 
   console.log('🤖 Starting Telegram Bot listener...');
 
-  await bot.start({
-    onStart: (botInfo) => {
-      console.log(`\n✅ Telegram Bot successfully started as @${botInfo.username}!`);
-      console.log('🚀 System is ready to accept commands and process requests.\n');
-      sendServerOnlineAlert(bot).catch(err => console.error('Failed to send Server Online Alert:', err));
+  // Gracefully handle 409 Conflict on startup when Render replaces containers
+  let botStartedSuccessfully = false;
+  for (let attempt = 1; attempt <= 10; attempt++) {
+    try {
+      await bot.start({
+        onStart: (botInfo) => {
+          botStartedSuccessfully = true;
+          console.log(`\n✅ Telegram Bot successfully started as @${botInfo.username}!`);
+          console.log('🚀 System is ready to accept commands and process requests.\n');
+          sendServerOnlineAlert(bot).catch(err => console.error('Failed to send Server Online Alert:', err));
+        }
+      });
+      break;
+    } catch (err) {
+      if (botStartedSuccessfully) break;
+      console.error(`[Boot] Bot startup attempt ${attempt}/10 notice: ${err.message}. Retrying in 3s...`);
+      await new Promise(r => setTimeout(r, 3000));
     }
-  });
+  }
 }
