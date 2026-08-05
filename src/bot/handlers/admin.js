@@ -29,6 +29,8 @@ export function registerAdminHandlers(bot) {
       `👥 <b>Total Users:</b> <code>${stats.totalUsers}</code> | ⚡ <b>Active (24h):</b> <code>${stats.activeUsers}</code>\n` +
       `✅ <b>Approved:</b> <code>${stats.totalApprovedUsers}</code> | ⏳ <b>Pending:</b> <code>${stats.totalPendingUsers}</code> | 🚫 <b>Banned:</b> <code>${stats.totalBannedUsers}</code>\n` +
       `📱 <b>Active Paired WA Sessions (Realtime):</b> <code>${activeWaSessions}</code>\n` +
+      `📊 <b>Global Total Checked Numbers:</b> <code>${stats.totalChecks}</code> (✅ <code>${stats.totalRegistered}</code> | ❌ <code>${stats.totalUnregistered}</code>)\n` +
+      `☁️ <b>Cloud Gist Counters Database:</b> <code>Synced & Restored ✅</code>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `<b>System Mode:</b> <code>${mode.toUpperCase()}</code>\n` +
       `<b>Auto-Approve:</b> <code>${autoApprove.toUpperCase()}</code>\n\n` +
@@ -99,8 +101,38 @@ export function registerAdminHandlers(bot) {
       await ctx.answerCallbackQuery('⚡ Auto-Approve set to: ON').catch(() => {});
     } else {
       dbService.setSetting('auto_approve', 'off');
-      await ctx.answerCallbackQuery('⚡ Auto-Approve set to: OFF').catch(() => {});
+      await ctx.answerCallbackQuery('🔴 Auto-Approve set to: OFF').catch(() => {});
     }
+
+    const mode = dbService.getSetting('bot_mode', config.botMode);
+    const autoApprove = dbService.getSetting('auto_approve', 'off');
+    const adminMsg = buildAdminMenuText();
+
+    try {
+      await ctx.editMessageText(adminMsg, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.adminMenu(mode, autoApprove)
+      });
+    } catch (e) {}
+  });
+
+  // Action: Toggle System Bot Mode (AUTHORIZED <-> PUBLIC <-> PRIVATE)
+  bot.callbackQuery('admin_mode_toggle', async (ctx) => {
+    if (!checkAdmin(ctx)) return;
+
+    const modes = ['authorized', 'public', 'private'];
+    const currentMode = dbService.getSetting('bot_mode', config.botMode);
+    const nextIdx = (modes.indexOf(currentMode) + 1) % modes.length;
+    const nextMode = modes[nextIdx];
+
+    dbService.setSetting('bot_mode', nextMode);
+
+    // Guard: If switching away from AUTHORIZED mode, force Auto-Approve to OFF
+    if (nextMode !== 'authorized') {
+      dbService.setSetting('auto_approve', 'off');
+    }
+
+    await ctx.answerCallbackQuery(`🔐 Bot Mode set to: ${nextMode.toUpperCase()}`).catch(() => {});
 
     const autoApprove = dbService.getSetting('auto_approve', 'off');
     const adminMsg = buildAdminMenuText();
@@ -108,434 +140,192 @@ export function registerAdminHandlers(bot) {
     try {
       await ctx.editMessageText(adminMsg, {
         parse_mode: 'HTML',
-        reply_markup: keyboards.adminMenu(currentMode, autoApprove)
+        reply_markup: keyboards.adminMenu(nextMode, autoApprove)
       });
     } catch (e) {}
   });
 
-  // Action: Toggle Bot Mode
-  bot.callbackQuery('admin_mode_toggle', async (ctx) => {
-    if (!checkAdmin(ctx)) return;
-
-    const modes = ['authorized', 'public', 'private'];
-    const currentMode = dbService.getSetting('bot_mode', config.botMode);
-    const nextIndex = (modes.indexOf(currentMode) + 1) % modes.length;
-    const newMode = modes[nextIndex];
-
-    dbService.setSetting('bot_mode', newMode);
-
-    // If switching away from AUTHORIZED mode, auto-turn off Auto-Approve
-    if (newMode !== 'authorized') {
-      dbService.setSetting('auto_approve', 'off');
-    }
-
-    await ctx.answerCallbackQuery(`Mode updated to: ${newMode.toUpperCase()}`).catch(() => {});
-
-    const autoApprove = dbService.getSetting('auto_approve', 'off');
-    const adminMsg = buildAdminMenuText();
-
-    await ctx.editMessageText(adminMsg, {
-      parse_mode: 'HTML',
-      reply_markup: keyboards.adminMenu(newMode, autoApprove)
-    });
-  });
-
-  // Action: Bulk Approve All Pending Users
-  bot.callbackQuery('admin_approve_all', async (ctx) => {
-    if (!checkAdmin(ctx)) return;
-
-    const count = dbService.approveAllPendingUsers();
-    await ctx.answerCallbackQuery(`✅ ${count} pending user(s) approved!`).catch(() => {});
-
-    const users = dbService.getAllUsers();
-    let text = `👥 <b>Registered Bot Users & Whitelist (${users.length})</b>\n━━━━━━━━━━━━━━━━━━━\n\n`;
-
-    for (const u of users.slice(0, 20)) {
-      const statusIcon = u.status === 'approved' ? '✅' : u.status === 'pending' ? '⏳' : '🚫';
-      const roleTag = u.role === 'admin' ? '👑 Admin' : '👤 User';
-      const joinedDate = u.created_at ? u.created_at.split(' ')[0] : 'N/A';
-      text += `${statusIcon} <b>${u.first_name}</b> (@${u.username || 'N/A'})\n`;
-      text += `└ ID: <code>${u.telegram_id}</code> | ${roleTag} | Status: <code>${u.status}</code> | Joined: <code>${joinedDate}</code>\n\n`;
-    }
-
-    try {
-      await ctx.editMessageText(text, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.userWhitelistMenu(users)
-      });
-    } catch (e) {}
-  });
-
-  // Action: Bulk Block All Pending Users
-  bot.callbackQuery('admin_block_all', async (ctx) => {
-    if (!checkAdmin(ctx)) return;
-
-    const count = dbService.blockAllPendingUsers();
-    await ctx.answerCallbackQuery(`🚫 ${count} pending user(s) blocked!`).catch(() => {});
-
-    const users = dbService.getAllUsers();
-    let text = `👥 <b>Registered Bot Users & Whitelist (${users.length})</b>\n━━━━━━━━━━━━━━━━━━━\n\n`;
-
-    for (const u of users.slice(0, 20)) {
-      const statusIcon = u.status === 'approved' ? '✅' : u.status === 'pending' ? '⏳' : '🚫';
-      const roleTag = u.role === 'admin' ? '👑 Admin' : '👤 User';
-      const joinedDate = u.created_at ? u.created_at.split(' ')[0] : 'N/A';
-      text += `${statusIcon} <b>${u.first_name}</b> (@${u.username || 'N/A'})\n`;
-      text += `└ ID: <code>${u.telegram_id}</code> | ${roleTag} | Status: <code>${u.status}</code> | Joined: <code>${joinedDate}</code>\n\n`;
-    }
-
-    try {
-      await ctx.editMessageText(text, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.userWhitelistMenu(users)
-      });
-    } catch (e) {}
-  });
-
-  // Action: Bulk Unban All Banned Users
-  bot.callbackQuery('admin_unban_all', async (ctx) => {
-    if (!checkAdmin(ctx)) return;
-
-    const count = dbService.unbanAllUsers();
-    await ctx.answerCallbackQuery(`🔓 ${count} banned user(s) unblocked!`).catch(() => {});
-
-    const bannedUsers = dbService.getBannedUsers();
-    let text = `🚫 <b>Banned / Blocked Users (${bannedUsers.length})</b>\n━━━━━━━━━━━━━━━━━━━\n\n`;
-
-    if (bannedUsers.length === 0) {
-      text += `<i>No banned users found! All users are unblocked.</i>`;
-    } else {
-      for (const u of bannedUsers.slice(0, 20)) {
-        const joinedDate = u.created_at ? u.created_at.split(' ')[0] : 'N/A';
-        text += `🚫 <b>${u.first_name}</b> (@${u.username || 'N/A'})\n`;
-        text += `└ ID: <code>${u.telegram_id}</code> | Joined: <code>${joinedDate}</code>\n\n`;
-      }
-    }
-
-    try {
-      await ctx.editMessageText(text, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.bannedUsersMenu(bannedUsers)
-      });
-    } catch (e) {}
-  });
-
-  // Action: View Banned / Blocked Users
-  bot.callbackQuery('admin_banned_users', async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => {});
-    if (!checkAdmin(ctx)) return;
-
-    const bannedUsers = dbService.getBannedUsers();
-    let text = `🚫 <b>Banned / Blocked Users (${bannedUsers.length})</b>\n━━━━━━━━━━━━━━━━━━━\n\n`;
-
-    if (bannedUsers.length === 0) {
-      text += `<i>No banned users found!</i>`;
-    } else {
-      for (const u of bannedUsers.slice(0, 20)) {
-        const joinedDate = u.created_at ? u.created_at.split(' ')[0] : 'N/A';
-        text += `🚫 <b>${u.first_name}</b> (@${u.username || 'N/A'})\n`;
-        text += `└ ID: <code>${u.telegram_id}</code> | Joined: <code>${joinedDate}</code>\n\n`;
-      }
-    }
-
-    try {
-      await ctx.editMessageText(text, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.bannedUsersMenu(bannedUsers)
-      });
-    } catch (e) {
-      if (!e.message?.includes('message is not modified')) {
-        await ctx.reply(text, {
-          parse_mode: 'HTML',
-          reply_markup: keyboards.bannedUsersMenu(bannedUsers)
-        });
-      }
-    }
-  });
-
-  // Action: Direct Message User Preset (from Banned user card)
-  bot.callbackQuery(/^admin_direct_msg_preset_(\d+)$/, async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => {});
-    if (!checkAdmin(ctx)) return;
-    const targetId = parseInt(ctx.match[1], 10);
-
-    adminState.set(ctx.from.id, { step: 'AWAITING_DIRECT_TEXT', targetId });
-
-    const promptText = 
-      `📩 <b>Send Direct Message to User</b>\n\n` +
-      `<b>Target User ID:</b> <code>${targetId}</code>\n\n` +
-      `Please reply with the <b>message text</b> you wish to send to this user.`;
-
-    try {
-      await ctx.editMessageText(promptText, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.cancelAdmin()
-      });
-    } catch (e) {
-      await ctx.reply(promptText, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.cancelAdmin()
-      });
-    }
-  });
-
-  // Action: Direct Message User (Step 1: Prompt Telegram ID)
-  bot.callbackQuery('admin_direct_msg', async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => {});
-    if (!checkAdmin(ctx)) return;
-
-    adminState.set(ctx.from.id, { step: 'AWAITING_DIRECT_USER_ID' });
-
-    const promptText = 
-      `📩 <b>Send Direct Message to User</b>\n\n` +
-      `Please reply with the target <b>Telegram User ID</b> (e.g. <code>123456789</code>).\n` +
-      `<i>You can revoke/delete the message from the user's chat after sending.</i>`;
-
-    try {
-      await ctx.editMessageText(promptText, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.cancelAdmin()
-      });
-    } catch (e) {
-      await ctx.reply(promptText, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.cancelAdmin()
-      });
-    }
-  });
-
-  // Action: Revoke/Delete Direct Message from User Chat
-  bot.callbackQuery(/^action_delete_direct_(\d+)_(\d+)$/, async (ctx) => {
-    if (!checkAdmin(ctx)) return;
-    const targetChatId = parseInt(ctx.match[1], 10);
-    const msgId = parseInt(ctx.match[2], 10);
-
-    await ctx.answerCallbackQuery('Revoking direct message...').catch(() => {});
-
-    try {
-      await ctx.api.deleteMessage(targetChatId, msgId);
-      await ctx.editMessageText(
-        `🗑️ <b>Direct Message Revoked!</b>\n\n` +
-        `The message has been deleted from user chat (<code>${targetChatId}</code>).`,
-        {
-          parse_mode: 'HTML',
-          reply_markup: keyboards.adminMenu(dbService.getSetting('bot_mode', config.botMode), dbService.getSetting('auto_approve', 'off'))
-        }
-      );
-    } catch (e) {
-      await ctx.reply(`⚠️ Could not delete message from user chat: ${e.message}`);
-    }
-  });
-
-  // Action: Button Manager Main Options
-  bot.callbackQuery('admin_button_mgr', async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => {});
-    if (!checkAdmin(ctx)) return;
-
-    const mgrMsg = 
-      `🔘 <b>Dynamic Main Menu Button Manager</b>\n\n` +
-      `Add custom URL link buttons directly to the main bot menu below:`;
-
-    try {
-      await ctx.editMessageText(mgrMsg, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.buttonManagerMenu()
-      });
-    } catch (e) {
-      await ctx.reply(mgrMsg, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.buttonManagerMenu()
-      });
-    }
-  });
-
-  // Action: Add URL Button (Step 1: Prompt Label)
-  bot.callbackQuery('admin_btn_add_url', async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => {});
-    if (!checkAdmin(ctx)) return;
-
-    adminState.set(ctx.from.id, { step: 'AWAITING_BTN_LABEL', type: 'url' });
-
-    const promptText = 
-      `🔗 <b>Add Custom URL Link Button (Step 1/2)</b>\n\n` +
-      `Please reply with the <b>Button Label / Name</b> (e.g. <code>💬 Official Support</code> or <code>📢 Channel</code>).`;
-
-    try {
-      await ctx.editMessageText(promptText, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.cancelAdmin()
-      });
-    } catch (e) {
-      await ctx.reply(promptText, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.cancelAdmin()
-      });
-    }
-  });
-
-  // Action: List & Manage Custom Buttons
-  bot.callbackQuery('admin_btn_list', async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => {});
-    if (!checkAdmin(ctx)) return;
-
-    const buttons = dbService.getAllCustomButtons();
-    const listMsg = 
-      `📋 <b>Custom Main Menu Buttons (${buttons.length})</b>\n\n` +
-      `Tap any button below to toggle active status or delete it:`;
-
-    try {
-      await ctx.editMessageText(listMsg, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.customButtonList(buttons)
-      });
-    } catch (e) {
-      await ctx.reply(listMsg, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.customButtonList(buttons)
-      });
-    }
-  });
-
-  // Action: Toggle Custom Button Active / Disabled
-  bot.callbackQuery(/^admin_btn_toggle_(\d+)$/, async (ctx) => {
-    if (!checkAdmin(ctx)) return;
-    const btnId = parseInt(ctx.match[1], 10);
-    dbService.toggleCustomButtonStatus(btnId);
-
-    await ctx.answerCallbackQuery('Button status updated!').catch(() => {});
-
-    const buttons = dbService.getAllCustomButtons();
-    const listMsg = 
-      `📋 <b>Custom Main Menu Buttons (${buttons.length})</b>\n\n` +
-      `Tap any button below to toggle active status or delete it:`;
-
-    try {
-      await ctx.editMessageText(listMsg, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.customButtonList(buttons)
-      });
-    } catch (e) {}
-  });
-
-  // Action: Delete Custom Button
-  bot.callbackQuery(/^admin_btn_del_(\d+)$/, async (ctx) => {
-    if (!checkAdmin(ctx)) return;
-    const btnId = parseInt(ctx.match[1], 10);
-    dbService.deleteCustomButton(btnId);
-
-    await ctx.answerCallbackQuery('Button deleted successfully!').catch(() => {});
-
-    const buttons = dbService.getAllCustomButtons();
-    const listMsg = 
-      `📋 <b>Custom Main Menu Buttons (${buttons.length})</b>\n\n` +
-      `Tap any button below to toggle active status or delete it:`;
-
-    try {
-      await ctx.editMessageText(listMsg, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.customButtonList(buttons)
-      });
-    } catch (e) {}
-  });
-
-  // Action: View Users / Whitelist (with interactive Approve / Block buttons)
+  // Action: User Whitelist & Approval Management
   bot.callbackQuery('admin_users', async (ctx) => {
     await ctx.answerCallbackQuery().catch(() => {});
     if (!checkAdmin(ctx)) return;
 
     const users = dbService.getAllUsers();
-    let text = `👥 <b>Registered Bot Users & Whitelist (${users.length})</b>\n━━━━━━━━━━━━━━━━━━━\n\n`;
+    const pendingCount = users.filter(u => u.status === 'pending').length;
 
-    for (const u of users.slice(0, 20)) {
-      const statusIcon = u.status === 'approved' ? '✅' : u.status === 'pending' ? '⏳' : '🚫';
-      const roleTag = u.role === 'admin' ? '👑 Admin' : '👤 User';
-      const joinedDate = u.created_at ? u.created_at.split(' ')[0] : 'N/A';
-      text += `${statusIcon} <b>${u.first_name}</b> (@${u.username || 'N/A'})\n`;
-      text += `└ ID: <code>${u.telegram_id}</code> | ${roleTag} | Status: <code>${u.status}</code> | Joined: <code>${joinedDate}</code>\n\n`;
-    }
+    let userMsg =
+      `👥 <b>User Whitelist & Authorization Management</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<b>Total Users:</b> <code>${users.length}</code> | <b>Pending Requests:</b> <code>${pendingCount}</code>\n\n` +
+      `Click any user action below to approve or block users:`;
 
     try {
-      await ctx.editMessageText(text, {
+      await ctx.editMessageText(userMsg, {
         parse_mode: 'HTML',
         reply_markup: keyboards.userWhitelistMenu(users)
       });
-    } catch (e) {
-      if (!e.message?.includes('message is not modified')) {
-        await ctx.reply(text, {
-          parse_mode: 'HTML',
-          reply_markup: keyboards.userWhitelistMenu(users)
-        });
-      }
-    }
-  });
-
-  // User Approval / Rejection Handlers with Live Card Re-rendering
-  bot.callbackQuery(/^user_(approve|reject)_(.+)$/, async (ctx) => {
-    if (!checkAdmin(ctx)) return;
-
-    const action = ctx.match[1];
-    const targetId = parseInt(ctx.match[2], 10);
-
-    const newStatus = action === 'approve' ? 'approved' : 'blocked';
-    dbService.setUserStatus(targetId, newStatus);
-
-    await ctx.answerCallbackQuery(`User ${targetId} ${newStatus}!`).catch(() => {});
-
-    const currentMsgText = ctx.callbackQuery?.message?.text || '';
-
-    // If coming from Banned Users card, re-render Banned Users card!
-    if (currentMsgText.includes('Banned') || currentMsgText.includes('Blocked')) {
-      const bannedUsers = dbService.getBannedUsers();
-      let text = `🚫 <b>Banned / Blocked Users (${bannedUsers.length})</b>\n━━━━━━━━━━━━━━━━━━━\n\n`;
-
-      if (bannedUsers.length === 0) {
-        text += `<i>No banned users found! All users are unblocked.</i>`;
-      } else {
-        for (const u of bannedUsers.slice(0, 20)) {
-          const joinedDate = u.created_at ? u.created_at.split(' ')[0] : 'N/A';
-          text += `🚫 <b>${u.first_name}</b> (@${u.username || 'N/A'})\n`;
-          text += `└ ID: <code>${u.telegram_id}</code> | Joined: <code>${joinedDate}</code>\n\n`;
-        }
-      }
-
-      try {
-        await ctx.editMessageText(text, {
-          parse_mode: 'HTML',
-          reply_markup: keyboards.bannedUsersMenu(bannedUsers)
-        });
-      } catch (e) {}
-    } else {
-      // Re-render User Whitelist card
-      const users = dbService.getAllUsers();
-      let text = `👥 <b>Registered Bot Users & Whitelist (${users.length})</b>\n━━━━━━━━━━━━━━━━━━━\n\n`;
-
-      for (const u of users.slice(0, 20)) {
-        const statusIcon = u.status === 'approved' ? '✅' : u.status === 'pending' ? '⏳' : '🚫';
-        const roleTag = u.role === 'admin' ? '👑 Admin' : '👤 User';
-        const joinedDate = u.created_at ? u.created_at.split(' ')[0] : 'N/A';
-        text += `${statusIcon} <b>${u.first_name}</b> (@${u.username || 'N/A'})\n`;
-        text += `└ ID: <code>${u.telegram_id}</code> | ${roleTag} | Status: <code>${u.status}</code> | Joined: <code>${joinedDate}</code>\n\n`;
-      }
-
-      try {
-        await ctx.editMessageText(text, {
-          parse_mode: 'HTML',
-          reply_markup: keyboards.userWhitelistMenu(users)
-        });
-      } catch (e) {}
-    }
-
-    // Notify user
-    try {
-      if (action === 'approve') {
-        await ctx.api.sendMessage(targetId, '🎉 <b>Access Approved / Unblocked!</b>\n\nYour account access has been unblocked by the admin. You can now use the WhatsApp Checker!', { parse_mode: 'HTML' });
-      } else {
-        await ctx.api.sendMessage(targetId, '🚫 <b>Access Blocked</b>\n\nYour account status was updated to blocked by the admin.', { parse_mode: 'HTML' });
-      }
     } catch (e) {}
   });
 
-  // Action: Global System Diagnostic Stats (Toggles smoothly on the same message card)
+  // Action: Approve All Pending Users
+  bot.callbackQuery('admin_approve_all', async (ctx) => {
+    if (!checkAdmin(ctx)) return;
+
+    const pendingUsers = dbService.getPendingUsers();
+    const count = dbService.approveAllPendingUsers();
+
+    await ctx.answerCallbackQuery(`✅ Approved all ${count} pending users!`).catch(() => {});
+
+    // Notify approved users
+    for (const u of pendingUsers) {
+      try {
+        await bot.api.sendMessage(
+          u.telegram_id,
+          '🎉 <b>Account Approved!</b>\n\nAn administrator has approved your access. You can now start using all bot features!',
+          { parse_mode: 'HTML', reply_markup: keyboards.mainMenu(false, sessionManager.isSessionConnected(u.telegram_id)) }
+        );
+      } catch (e) {}
+    }
+
+    const users = dbService.getAllUsers();
+    const userMsg =
+      `👥 <b>User Whitelist & Authorization Management</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<b>Total Users:</b> <code>${users.length}</code> | <b>Pending Requests:</b> <code>0</code>\n\n` +
+      `✅ <i>Successfully approved all pending users!</i>`;
+
+    try {
+      await ctx.editMessageText(userMsg, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.userWhitelistMenu(users)
+      });
+    } catch (e) {}
+  });
+
+  // Action: Block All Pending Users
+  bot.callbackQuery('admin_block_all', async (ctx) => {
+    if (!checkAdmin(ctx)) return;
+
+    const count = dbService.blockAllPendingUsers();
+    await ctx.answerCallbackQuery(`🚫 Blocked all ${count} pending users.`).catch(() => {});
+
+    const users = dbService.getAllUsers();
+    const userMsg =
+      `👥 <b>User Whitelist & Authorization Management</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<b>Total Users:</b> <code>${users.length}</code> | <b>Pending Requests:</b> <code>0</code>\n\n` +
+      `🚫 <i>Successfully blocked all pending users!</i>`;
+
+    try {
+      await ctx.editMessageText(userMsg, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.userWhitelistMenu(users)
+      });
+    } catch (e) {}
+  });
+
+  // Action: Single User Approve Callback query
+  bot.callbackQuery(/^user_approve_(\d+)$/, async (ctx) => {
+    if (!checkAdmin(ctx)) return;
+    const targetId = parseInt(ctx.match[1], 10);
+
+    dbService.setUserStatus(targetId, 'approved');
+    await ctx.answerCallbackQuery('✅ User access approved!').catch(() => {});
+
+    try {
+      await bot.api.sendMessage(
+        targetId,
+        '🎉 <b>Account Approved!</b>\n\nAn administrator has approved your access. You can now start using all bot features!',
+        { parse_mode: 'HTML', reply_markup: keyboards.mainMenu(false, sessionManager.isSessionConnected(targetId)) }
+      );
+    } catch (e) {}
+
+    const users = dbService.getAllUsers();
+    try {
+      await ctx.editMessageText(
+        `👥 <b>User Whitelist & Authorization Management</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<b>Total Users:</b> <code>${users.length}</code>\n\n` +
+        `✅ <i>Approved access for user ID ${targetId}.</i>`,
+        { parse_mode: 'HTML', reply_markup: keyboards.userWhitelistMenu(users) }
+      );
+    } catch (e) {}
+  });
+
+  // Action: Single User Reject/Block Callback query
+  bot.callbackQuery(/^user_reject_(\d+)$/, async (ctx) => {
+    if (!checkAdmin(ctx)) return;
+    const targetId = parseInt(ctx.match[1], 10);
+
+    dbService.setUserStatus(targetId, 'blocked');
+    await ctx.answerCallbackQuery('🚫 User access blocked!').catch(() => {});
+
+    try {
+      await bot.api.sendMessage(
+        targetId,
+        '🚫 <b>Account Access Suspended</b>\n\nYour account access has been restricted by an administrator.',
+        { parse_mode: 'HTML' }
+      );
+    } catch (e) {}
+
+    const users = dbService.getAllUsers();
+    try {
+      await ctx.editMessageText(
+        `👥 <b>User Whitelist & Authorization Management</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<b>Total Users:</b> <code>${users.length}</code>\n\n` +
+        `🚫 <i>Blocked access for user ID ${targetId}.</i>`,
+        { parse_mode: 'HTML', reply_markup: keyboards.userWhitelistMenu(users) }
+      );
+    } catch (e) {}
+  });
+
+  // Action: View Banned Users List
+  bot.callbackQuery('admin_banned_users', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!checkAdmin(ctx)) return;
+
+    const bannedUsers = dbService.getBannedUsers();
+
+    let msg =
+      `🚫 <b>Banned & Blocked Users Panel</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<b>Total Banned Users:</b> <code>${bannedUsers.length}</code>\n\n`;
+
+    if (bannedUsers.length === 0) {
+      msg += `<i>No users are currently banned or blocked.</i>`;
+    } else {
+      msg += `Click any user button below to unblock or message them:`;
+    }
+
+    try {
+      await ctx.editMessageText(msg, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.bannedUsersMenu(bannedUsers)
+      });
+    } catch (e) {}
+  });
+
+  // Action: Unban All Banned Users
+  bot.callbackQuery('admin_unban_all', async (ctx) => {
+    if (!checkAdmin(ctx)) return;
+
+    const count = dbService.unbanAllUsers();
+    await ctx.answerCallbackQuery(`🔓 Unbanned all ${count} blocked users!`).catch(() => {});
+
+    const bannedUsers = dbService.getBannedUsers();
+    try {
+      await ctx.editMessageText(
+        `🚫 <b>Banned & Blocked Users Panel</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<b>Total Banned Users:</b> <code>0</code>\n\n` +
+        `🔓 <i>Successfully unbanned all blocked users!</i>`,
+        { parse_mode: 'HTML', reply_markup: keyboards.bannedUsersMenu(bannedUsers) }
+      );
+    } catch (e) {}
+  });
+
+  // Action: Global System Stats
   bot.callbackQuery('admin_stats', async (ctx) => {
     await ctx.answerCallbackQuery().catch(() => {});
     if (!checkAdmin(ctx)) return;
@@ -543,73 +333,84 @@ export function registerAdminHandlers(bot) {
     const stats = dbService.getStats();
     const mode = dbService.getSetting('bot_mode', config.botMode);
     const delay = dbService.getSetting('check_delay_ms', String(config.checkDelayMs));
+    const activeWaSessions = sessionManager.getActiveSessionsCount();
 
-    const statsMsg = 
-      `📈 <b>Global System Diagnostic Statistics</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    const statsMsg =
+      `📈 <b>Global System Diagnostics & Analytics</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `👥 <b>Total Registered Users:</b> <code>${stats.totalUsers}</code>\n` +
-      `⚡ <b>Active Users (24h):</b> <code>${stats.activeUsers}</code>\n` +
-      `✅ <b>Approved Active Users:</b> <code>${stats.totalApprovedUsers}</code>\n` +
-      `⏳ <b>Pending Users:</b> <code>${stats.totalPendingUsers}</code>\n` +
-      `🚫 <b>Banned / Blocked Users:</b> <code>${stats.totalBannedUsers}</code>\n` +
-      `📱 <b>Active Paired WA Sessions:</b> <code>${sessionManager.getActiveSessionsCount()}</code>\n` +
+      `⚡ <b>Active Users (24 Hours):</b> <code>${stats.activeUsers}</code>\n` +
+      `✅ <b>Approved Whitelist Users:</b> <code>${stats.totalApprovedUsers}</code>\n` +
+      `⏳ <b>Pending Approval Users:</b> <code>${stats.totalPendingUsers}</code>\n` +
+      `🚫 <b>Banned & Blocked Users:</b> <code>${stats.totalBannedUsers}</code>\n` +
+      `📱 <b>Active Paired WA Sessions:</b> <code>${activeWaSessions}</code>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `📊 <b>Global Total Checked Numbers:</b> <code>${stats.totalChecks}</code>\n` +
+      `✅ <b>Global Registered WhatsApp:</b> <code>${stats.totalRegistered}</code>\n` +
+      `❌ <b>Global Unregistered Numbers:</b> <code>${stats.totalUnregistered}</code>\n` +
+      `☁️ <b>Cloud Gist Database:</b> <code>Synced & Restored ✅</code>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `⚙️ <b>System Mode:</b> <code>${mode.toUpperCase()}</code>\n` +
-      `⏱️ <b>Check Interval:</b> <code>${delay}ms</code> per request\n` +
-      `🔍 <b>Total Checks Executed:</b> <code>${stats.totalChecks}</code>\n` +
-      `🟢 <b>Total Registered Numbers:</b> <code>${stats.totalRegistered}</code>\n` +
-      `🔴 <b>Total Unregistered Numbers:</b> <code>${stats.totalUnregistered}</code>`;
+      `⚡ <b>Check Delay:</b> <code>${delay}ms</code>`;
 
     try {
       await ctx.editMessageText(statsMsg, {
         parse_mode: 'HTML',
         reply_markup: keyboards.backToAdmin()
       });
-    } catch (e) {
-      if (!e.message?.includes('message is not modified')) {
-        await ctx.reply(statsMsg, {
-          parse_mode: 'HTML',
-          reply_markup: keyboards.backToAdmin()
-        });
-      }
-    }
+    } catch (e) {}
   });
 
-  // Action: Change Delay
+  // Action: Change Admin ID
+  bot.callbackQuery('admin_change_id', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!checkAdmin(ctx)) return;
+
+    const telegramId = ctx.from.id;
+    adminState.set(telegramId, { step: 'AWAITING_NEW_ADMIN_ID' });
+
+    const promptText =
+      `🆔 <b>Change System Admin Telegram ID</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `Send or reply with the new Telegram User ID to add/set as Super Admin (e.g. <code>6798979733</code>).\n\n` +
+      `<i>Current Admin ID: <code>${telegramId}</code></i>`;
+
+    try {
+      await ctx.editMessageText(promptText, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.cancelAdmin()
+      });
+    } catch (e) {}
+  });
+
+  // Action: Change Delay Menu
   bot.callbackQuery('admin_set_delay', async (ctx) => {
     await ctx.answerCallbackQuery().catch(() => {});
     if (!checkAdmin(ctx)) return;
 
     const currentDelay = dbService.getSetting('check_delay_ms', String(config.checkDelayMs));
-    const cardMsgId = ctx.callbackQuery?.message?.message_id;
 
-    adminState.set(ctx.from.id, { step: 'AWAITING_DELAY', cardMsgId });
-
-    const delayPromptMsg = 
-      `⚙️ <b>Set Rate-limiting Check Delay</b>\n\n` +
-      `<b>Current Engine Delay:</b> <code>${currentDelay}ms</code>\n\n` +
-      `Select a quick preset option below or reply with a custom value in milliseconds:`;
+    const delayText =
+      `⚙️ <b>Change Bulk Checking Speed & Batch Delay</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `Current Check Delay: <code>${currentDelay}ms</code>\n\n` +
+      `Select a check delay option below:`;
 
     try {
-      await ctx.editMessageText(delayPromptMsg, {
+      await ctx.editMessageText(delayText, {
         parse_mode: 'HTML',
         reply_markup: keyboards.adminDelayMenu()
       });
-    } catch (e) {
-      await ctx.reply(delayPromptMsg, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.adminDelayMenu()
-      });
-    }
+    } catch (e) {}
   });
 
-  // Action: Preset Delay Selected
+  // Action: Set Delay Handler Callbacks
   bot.callbackQuery(/^admin_delay_set_(\d+)$/, async (ctx) => {
     if (!checkAdmin(ctx)) return;
-    const val = parseInt(ctx.match[1], 10);
-    adminState.delete(ctx.from.id);
+    const newDelay = parseInt(ctx.match[1], 10);
 
-    dbService.setSetting('check_delay_ms', String(val));
-    await ctx.answerCallbackQuery(`Delay set to ${val}ms!`).catch(() => {});
+    dbService.setSetting('check_delay_ms', newDelay);
+    await ctx.answerCallbackQuery(`⚡ Check delay set to: ${newDelay}ms`).catch(() => {});
 
     const mode = dbService.getSetting('bot_mode', config.botMode);
     const autoApprove = dbService.getSetting('auto_approve', 'off');
@@ -620,271 +421,200 @@ export function registerAdminHandlers(bot) {
         parse_mode: 'HTML',
         reply_markup: keyboards.adminMenu(mode, autoApprove)
       });
-    } catch (e) {
-      await ctx.reply(adminMsg, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.adminMenu(mode, autoApprove)
-      });
-    }
+    } catch (e) {}
   });
 
-  // Action: Initiate Change Admin ID
-  bot.callbackQuery('admin_change_id', async (ctx) => {
+  // Action: Button Manager Menu
+  bot.callbackQuery('admin_button_mgr', async (ctx) => {
     await ctx.answerCallbackQuery().catch(() => {});
     if (!checkAdmin(ctx)) return;
 
-    adminState.set(ctx.from.id, { step: 'AWAITING_NEW_ADMIN_ID' });
+    const telegramId = ctx.from.id;
+    adminState.delete(telegramId);
 
-    const changeIdPrompt = 
-      `🆔 <b>Change / Transfer Telegram Admin ID</b>\n\n` +
-      `Please reply with the Telegram User ID you wish to assign as Super Admin (e.g. <code>123456789</code>).\n\n` +
-      `<i>You will be asked to confirm your agreement before privileges are granted.</i>`;
+    const msg =
+      `🔘 <b>Custom Button Manager Panel</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `Create and attach custom URL link buttons to the Main Menu!\n\n` +
+      `Select an option below:`;
 
     try {
-      await ctx.editMessageText(changeIdPrompt, {
+      await ctx.editMessageText(msg, {
         parse_mode: 'HTML',
-        reply_markup: keyboards.cancelAdmin()
+        reply_markup: keyboards.buttonManagerMenu()
       });
-    } catch (e) {
-      await ctx.reply(changeIdPrompt, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.cancelAdmin()
-      });
-    }
+    } catch (e) {}
   });
 
-  // Action: Agree & Execute Admin ID Change
-  bot.callbackQuery(/^action_agree_admin_id_change_(\d+)$/, async (ctx) => {
+  // Action: Add URL Button Wizard
+  bot.callbackQuery('admin_btn_add_url', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
     if (!checkAdmin(ctx)) return;
-    const targetId = parseInt(ctx.match[1], 10);
-    const previousAdminId = ctx.from.id;
 
-    // Save custom admin ID in SQLite DB and active config
-    const currentCustomAdmins = dbService.getSetting('custom_admin_ids', '');
-    const adminSet = new Set(currentCustomAdmins.split(',').map(Number).filter(Boolean));
-    adminSet.add(targetId);
-    
-    if (!config.adminIds.includes(targetId)) {
-      config.adminIds.push(targetId);
-    }
+    const telegramId = ctx.from.id;
+    adminState.set(telegramId, { step: 'AWAITING_BTN_LABEL' });
 
-    dbService.setSetting('custom_admin_ids', Array.from(adminSet).join(','));
-    dbService.setUserRole(targetId, 'admin');
-    dbService.setUserStatus(targetId, 'approved');
-
-    await ctx.answerCallbackQuery(`Admin ID updated to ${targetId}!`).catch(() => {});
-
-    const successMsg = 
-      `🎉 <b>Telegram Admin ID Successfully Changed!</b>\n\n` +
-      `• <b>Previous Admin ID:</b> <code>${previousAdminId}</code>\n` +
-      `• <b>New Admin Telegram ID:</b> <code>${targetId}</code>\n\n` +
-      `Super Admin control panel access has been granted to Telegram ID: <code>${targetId}</code>.`;
+    const msg =
+      `➕ <b>Add Custom URL Link Button (Step 1/2)</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `Send the button text/label (e.g. <code>📢 Support Channel</code>):`;
 
     try {
-      await ctx.editMessageText(successMsg, {
+      await ctx.editMessageText(msg, {
         parse_mode: 'HTML',
-        reply_markup: keyboards.adminMenu(dbService.getSetting('bot_mode', config.botMode), dbService.getSetting('auto_approve', 'off'))
+        reply_markup: keyboards.cancelAdmin()
       });
-    } catch (e) {
-      await ctx.reply(successMsg, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.adminMenu(dbService.getSetting('bot_mode', config.botMode), dbService.getSetting('auto_approve', 'off'))
-      });
+    } catch (e) {}
+  });
+
+  // Action: View & Manage Buttons List
+  bot.callbackQuery('admin_btn_list', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!checkAdmin(ctx)) return;
+
+    const buttons = dbService.getAllCustomButtons();
+
+    let msg =
+      `📋 <b>Active Custom Buttons List</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+
+    if (buttons.length === 0) {
+      msg += `<i>No custom buttons created yet.</i>`;
+    } else {
+      msg += `Click any button to toggle status or delete:`;
     }
 
-    // Notify new Admin
     try {
-      await ctx.api.sendMessage(
-        targetId,
-        `👑 <b>Super Admin Access Granted!</b>\n\n` +
-        `Your Telegram ID (<code>${targetId}</code>) has been appointed as a Super Admin.\n` +
-        `Use /admin to open the Admin Control Panel.`,
-        { parse_mode: 'HTML' }
+      await ctx.editMessageText(msg, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.customButtonList(buttons)
+      });
+    } catch (e) {}
+  });
+
+  // Action: Toggle Button Status
+  bot.callbackQuery(/^admin_btn_toggle_(\d+)$/, async (ctx) => {
+    if (!checkAdmin(ctx)) return;
+    const btnId = parseInt(ctx.match[1], 10);
+
+    dbService.toggleCustomButtonStatus(btnId);
+    await ctx.answerCallbackQuery('🟢 Button status updated!').catch(() => {});
+
+    const buttons = dbService.getAllCustomButtons();
+    try {
+      await ctx.editMessageText(
+        `📋 <b>Active Custom Buttons List</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `Click any button to toggle status or delete:`,
+        { parse_mode: 'HTML', reply_markup: keyboards.customButtonList(buttons) }
       );
     } catch (e) {}
   });
 
-  // Action: Broadcast Announcement
+  // Action: Delete Custom Button
+  bot.callbackQuery(/^admin_btn_del_(\d+)$/, async (ctx) => {
+    if (!checkAdmin(ctx)) return;
+    const btnId = parseInt(ctx.match[1], 10);
+
+    dbService.deleteCustomButton(btnId);
+    await ctx.answerCallbackQuery('🗑️ Button deleted!').catch(() => {});
+
+    const buttons = dbService.getAllCustomButtons();
+    try {
+      await ctx.editMessageText(
+        `📋 <b>Active Custom Buttons List</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `Click any button to toggle status or delete:`,
+        { parse_mode: 'HTML', reply_markup: keyboards.customButtonList(buttons) }
+      );
+    } catch (e) {}
+  });
+
+  // Action: Broadcast Announcement Wizard
   bot.callbackQuery('admin_broadcast', async (ctx) => {
     await ctx.answerCallbackQuery().catch(() => {});
     if (!checkAdmin(ctx)) return;
 
-    adminState.set(ctx.from.id, { step: 'AWAITING_BROADCAST' });
+    const telegramId = ctx.from.id;
+    adminState.set(telegramId, { step: 'AWAITING_BROADCAST_MSG' });
 
-    const promptText = 
-      `📢 <b>Broadcast Message to All Users</b>\n\n` +
-      `Send the message you wish to broadcast to all registered bot users.`;
+    const msg =
+      `📢 <b>Broadcast Announcement Wizard</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `Send or forward the message you want to broadcast to all registered bot users.\n` +
+      `<i>Supports HTML text, photos, and formatting!</i>`;
 
     try {
-      await ctx.editMessageText(promptText, {
+      await ctx.editMessageText(msg, {
         parse_mode: 'HTML',
         reply_markup: keyboards.cancelAdmin()
       });
-    } catch (e) {
-      await ctx.reply(promptText, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.cancelAdmin()
-      });
-    }
-  });
-
-  // Action: Revoke / Delete Broadcast Message from All Users
-  bot.callbackQuery(/^action_delete_broadcast_(.+)$/, async (ctx) => {
-    if (!checkAdmin(ctx)) return;
-    const jobId = ctx.match[1];
-    const items = broadcastCache.get(jobId);
-
-    if (!items || items.length === 0) {
-      return ctx.answerCallbackQuery('⚠️ No stored broadcast messages to delete or already revoked.').catch(() => {});
-    }
-
-    await ctx.answerCallbackQuery('Revoking broadcast message from all users...').catch(() => {});
-
-    let deletedCount = 0;
-    for (const item of items) {
-      try {
-        await ctx.api.deleteMessage(item.chatId, item.messageId);
-        deletedCount++;
-      } catch (e) {}
-    }
-
-    broadcastCache.delete(jobId);
-
-    try {
-      await ctx.editMessageText(
-        `🗑️ <b>Broadcast Message Revoked!</b>\n\n` +
-        `The broadcast message has been deleted from <b>${deletedCount}</b> user chat(s).`,
-        {
-          parse_mode: 'HTML',
-          reply_markup: keyboards.adminMenu(dbService.getSetting('bot_mode', config.botMode), dbService.getSetting('auto_approve', 'off'))
-        }
-      );
     } catch (e) {}
   });
 
-  // Handle Admin Text Inputs (Direct Messages, Button Creation, Admin ID, Delay, Broadcast)
+  // Action: Direct Message User Wizard
+  bot.callbackQuery('admin_direct_msg', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!checkAdmin(ctx)) return;
+
+    const telegramId = ctx.from.id;
+    adminState.set(telegramId, { step: 'AWAITING_DIRECT_USER_ID' });
+
+    const msg =
+      `📩 <b>Direct Message User Wizard</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `Send the Telegram User ID of the recipient (e.g. <code>6798979733</code>):`;
+
+    try {
+      await ctx.editMessageText(msg, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.cancelAdmin()
+      });
+    } catch (e) {}
+  });
+
+  // Preset Direct Message action from banned user list
+  bot.callbackQuery(/^admin_direct_msg_preset_(\d+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!checkAdmin(ctx)) return;
+
+    const targetUserId = parseInt(ctx.match[1], 10);
+    const telegramId = ctx.from.id;
+    adminState.set(telegramId, { step: 'AWAITING_DIRECT_MSG_TEXT', targetUserId });
+
+    const msg =
+      `📩 <b>Direct Message User</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `Target User ID: <code>${targetUserId}</code>\n\n` +
+      `Send the message text you want to send directly to this user:`;
+
+    try {
+      await ctx.editMessageText(msg, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.cancelAdmin()
+      });
+    } catch (e) {}
+  });
+
+  // Handle Admin Input Messages (Text)
   bot.on('message:text', async (ctx, next) => {
     const telegramId = ctx.from.id;
     const state = adminState.get(telegramId);
+    if (!state) return next();
 
-    if (state && state.step === 'AWAITING_DIRECT_USER_ID') {
-      const input = ctx.message.text.trim();
-      const targetId = parseInt(input, 10);
-      try { await ctx.deleteMessage(); } catch (e) {}
+    const rawText = ctx.message.text ? ctx.message.text.trim() : '';
 
-      if (isNaN(targetId) || targetId <= 0) {
-        return ctx.reply('❌ <b>Invalid Telegram ID</b>\n\nPlease enter a valid numeric Telegram User ID.', { parse_mode: 'HTML' });
+    if (state.step === 'AWAITING_NEW_ADMIN_ID') {
+      const targetId = parseInt(rawText, 10);
+      if (isNaN(targetId) || targetId < 1000) {
+        return ctx.reply('❌ Invalid Telegram ID format. Please send a valid numeric Telegram ID.');
       }
-
-      adminState.set(telegramId, { step: 'AWAITING_DIRECT_TEXT', targetId });
-
-      return ctx.reply(
-        `📩 <b>Send Direct Message to User</b>\n\n` +
-        `<b>Target Telegram User ID:</b> <code>${targetId}</code>\n\n` +
-        `Please reply with the <b>message text</b> you wish to send directly to this user.`,
-        { parse_mode: 'HTML', reply_markup: keyboards.cancelAdmin() }
-      );
-    }
-
-    if (state && state.step === 'AWAITING_DIRECT_TEXT') {
       adminState.delete(telegramId);
-      const textMsg = ctx.message.text.trim();
-      const targetId = state.targetId;
-      try { await ctx.deleteMessage(); } catch (e) {}
 
-      try {
-        const sent = await ctx.api.sendMessage(
-          targetId,
-          `📩 <b>Direct Message from Administrator</b>\n` +
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-          `${textMsg}`,
-          { parse_mode: 'HTML' }
-        );
-
-        const confirmText = 
-          `🎉 <b>Direct Message Delivered!</b>\n\n` +
-          `• <b>Target User ID:</b> <code>${targetId}</code>\n` +
-          `• <b>Message ID:</b> <code>${sent.message_id}</code>\n\n` +
-          `<i>Click below to revoke and delete this message from the user's chat at any time:</i>`;
-
-        return ctx.reply(confirmText, {
-          parse_mode: 'HTML',
-          reply_markup: keyboards.directMessageRevoke(targetId, sent.message_id)
-        });
-      } catch (err) {
-        // Auto-cleanup deleted/blocked account users
-        if (err.message?.includes('bot was blocked') || err.message?.includes('user is deactivated') || err.error_code === 403) {
-          dbService.deleteUser(targetId);
-          return ctx.reply(`⚠️ <b>User Account Deactivated / Blocked Bot</b>\n\nUser ID <code>${targetId}</code> was automatically removed from the database system.`, { parse_mode: 'HTML' });
-        }
-        return ctx.reply(`❌ <b>Failed to send message:</b> ${err.message}`);
-      }
-    }
-
-    if (state && state.step === 'AWAITING_BTN_LABEL') {
-      const label = ctx.message.text.trim();
-      try { await ctx.deleteMessage(); } catch (e) {}
-
-      if (!label) {
-        return ctx.reply('❌ Button label cannot be empty.');
-      }
-
-      adminState.set(telegramId, { step: 'AWAITING_BTN_VALUE', type: state.type, label });
-
-      return ctx.reply(
-        `🔗 <b>Add Custom URL Link Button (Step 2/2)</b>\n\n` +
-        `<b>Button Name:</b> <code>${label}</code>\n\n` +
-        `Please reply with the target <b>URL Link</b> (e.g. <code>https://t.me/your_channel</code>).`,
-        { parse_mode: 'HTML', reply_markup: keyboards.cancelAdmin() }
-      );
-    }
-
-    if (state && state.step === 'AWAITING_BTN_VALUE') {
-      adminState.delete(telegramId);
-      const value = ctx.message.text.trim();
-      try { await ctx.deleteMessage(); } catch (e) {}
-
-      if (!value) {
-        return ctx.reply('❌ Button target content cannot be empty.');
-      }
-
-      if (!value.startsWith('http://') && !value.startsWith('https://')) {
-        return ctx.reply('❌ Invalid URL link. URL must start with http:// or https://');
-      }
-
-      // Add to Database
-      dbService.addCustomButton(state.label, 'url', value);
-
-      const successMsg = 
-        `🎉 <b>Custom Main Menu Button Created!</b>\n\n` +
-        `• <b>Button Label:</b> <code>${state.label}</code>\n` +
-        `• <b>Target URL:</b> <code>${value}</code>\n\n` +
-        `This button is now live on the Main Menu for all bot users!`;
-
-      const buttons = dbService.getAllCustomButtons();
-      return ctx.reply(successMsg, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.customButtonList(buttons)
-      });
-    }
-
-    if (state && state.step === 'AWAITING_NEW_ADMIN_ID') {
-      adminState.delete(telegramId);
-      const input = ctx.message.text.trim();
-      const targetId = parseInt(input, 10);
-
-      // Auto-delete admin input text message for chat cleanliness
-      try { await ctx.deleteMessage(); } catch (e) {}
-
-      if (isNaN(targetId) || targetId <= 0) {
-        return ctx.reply('❌ <b>Invalid Telegram ID</b>\n\nPlease enter a valid numeric Telegram ID (e.g. <code>123456789</code>).', { parse_mode: 'HTML' });
-      }
-
-      const confirmMsg = 
-        `⚠️ <b>Confirm Telegram Admin ID Change</b>\n\n` +
-        `You are about to assign Super Admin privileges to:\n` +
-        `• <b>Target Telegram ID:</b> <code>${targetId}</code>\n\n` +
-        `<b>Do you agree to change and assign this Admin ID?</b>`;
+      const confirmMsg =
+        `⚠️ <b>Confirm Admin ID Addition</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `Are you sure you want to add/set Telegram User ID <code>${targetId}</code> as Super Admin?`;
 
       return ctx.reply(confirmMsg, {
         parse_mode: 'HTML',
@@ -892,94 +622,208 @@ export function registerAdminHandlers(bot) {
       });
     }
 
-    if (state && state.step === 'AWAITING_DELAY') {
-      adminState.delete(telegramId);
-      const val = parseInt(ctx.message.text.trim(), 10);
-
-      // Auto-delete admin input text message for chat cleanliness
-      try { await ctx.deleteMessage(); } catch (e) {}
-
-      if (isNaN(val) || val < 0 || val > 10000) {
-        return ctx.reply('❌ Invalid delay. Please enter a value between 0 and 10000 ms.');
-      }
-
-      dbService.setSetting('check_delay_ms', String(val));
-      const mode = dbService.getSetting('bot_mode', config.botMode);
-      const autoApprove = dbService.getSetting('auto_approve', 'off');
-      const adminMsg = buildAdminMenuText();
-
-      if (state.cardMsgId) {
-        try {
-          return await ctx.api.editMessageText(ctx.chat.id, state.cardMsgId, adminMsg, {
-            parse_mode: 'HTML',
-            reply_markup: keyboards.adminMenu(mode, autoApprove)
-          });
-        } catch (e) {}
-      }
-
-      return ctx.reply(adminMsg, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.adminMenu(mode, autoApprove)
-      });
+    if (state.step === 'AWAITING_BTN_LABEL') {
+      adminState.set(telegramId, { step: 'AWAITING_BTN_URL', label: rawText });
+      return ctx.reply(
+        `🔗 <b>Add Custom URL Link Button (Step 2/2)</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `Button Label: <code>${rawText}</code>\n\n` +
+        `Send the full URL link (e.g. <code>https://t.me/yourchannel</code>):`,
+        { parse_mode: 'HTML', reply_markup: keyboards.cancelAdmin() }
+      );
     }
 
-    if (state && state.step === 'AWAITING_BROADCAST') {
+    if (state.step === 'AWAITING_BTN_URL') {
+      if (!rawText.startsWith('http://') && !rawText.startsWith('https://')) {
+        return ctx.reply('❌ Invalid URL format. URL must start with http:// or https://');
+      }
+      dbService.addCustomButton(state.label, 'url', rawText);
       adminState.delete(telegramId);
-      const broadcastMsg = ctx.message.text;
 
-      const users = dbService.getAllUsers();
-      let targetUsers = users.filter(u => u.telegram_id !== telegramId);
-      if (targetUsers.length === 0) {
-        targetUsers = users;
+      return ctx.reply(
+        `✅ <b>Custom Button Created Successfully!</b>\n\n` +
+        `Label: <b>${state.label}</b>\nURL: <code>${rawText}</code>`,
+        { parse_mode: 'HTML', reply_markup: keyboards.buttonManagerMenu() }
+      );
+    }
+
+    if (state.step === 'AWAITING_DIRECT_USER_ID') {
+      const targetUserId = parseInt(rawText, 10);
+      if (isNaN(targetUserId)) {
+        return ctx.reply('❌ Invalid Telegram ID. Please send a numeric User ID.');
       }
 
-      const deliveredItems = [];
-      let sentCount = 0;
-      let failCount = 0;
+      adminState.set(telegramId, { step: 'AWAITING_DIRECT_MSG_TEXT', targetUserId });
+      return ctx.reply(
+        `📩 <b>Direct Message User</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `Target User ID: <code>${targetUserId}</code>\n\n` +
+        `Send the text message to deliver:`,
+        { parse_mode: 'HTML', reply_markup: keyboards.cancelAdmin() }
+      );
+    }
 
-      // Parallel instant broadcast sending to target users with auto-cleanup for deleted/blocked users
-      const sendPromises = targetUsers.map(async (u) => {
-        try {
-          const sent = await ctx.api.sendMessage(u.telegram_id, `📢 <b>Announcement</b>\n\n${broadcastMsg}`, { parse_mode: 'HTML' });
-          return { ok: true, chatId: u.telegram_id, messageId: sent.message_id };
-        } catch (e) {
-          if (e.message?.includes('bot was blocked') || e.message?.includes('user is deactivated') || e.error_code === 403) {
-            dbService.deleteUser(u.telegram_id);
+    if (state.step === 'AWAITING_DIRECT_MSG_TEXT') {
+      const targetUserId = state.targetUserId;
+      adminState.delete(telegramId);
+
+      try {
+        const sent = await bot.api.sendMessage(
+          targetUserId,
+          `💬 <b>Direct Message from Administrator:</b>\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `${rawText}\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          { parse_mode: 'HTML' }
+        );
+
+        return ctx.reply(
+          `✅ <b>Direct Message Delivered!</b>\n\nTarget User: <code>${targetUserId}</code>`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: keyboards.directMessageRevoke(targetUserId, sent.message_id)
           }
-          return { ok: false };
-        }
-      });
+        );
+      } catch (err) {
+        return ctx.reply(`❌ Failed to deliver message to user ${targetUserId}: ${err.message}`, {
+          reply_markup: keyboards.backToAdmin()
+        });
+      }
+    }
 
-      const results = await Promise.allSettled(sendPromises);
-      for (const r of results) {
-        if (r.status === 'fulfilled' && r.value.ok) {
-          sentCount++;
-          deliveredItems.push({ chatId: r.value.chatId, messageId: r.value.messageId });
-        } else {
+    if (state.step === 'AWAITING_BROADCAST_MSG') {
+      adminState.delete(telegramId);
+      const allUsers = dbService.getAllUsers();
+      const jobId = `bcast_${Date.now()}`;
+
+      const waitMsg = await ctx.reply(`🚀 <i>Broadcasting message to ${allUsers.length} users...</i>`, { parse_mode: 'HTML' });
+
+      let successCount = 0;
+      let failCount = 0;
+      const sentMsgRecords = [];
+
+      for (const u of allUsers) {
+        try {
+          const sent = await bot.api.sendMessage(
+            u.telegram_id,
+            `📢 <b>Announcement:</b>\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `${rawText}\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            { parse_mode: 'HTML' }
+          );
+          successCount++;
+          sentMsgRecords.push({ chatId: u.telegram_id, messageId: sent.message_id });
+        } catch (e) {
           failCount++;
         }
       }
 
-      const jobId = `bc_${Date.now()}`;
-      broadcastCache.set(jobId, deliveredItems);
+      broadcastCache.set(jobId, sentMsgRecords);
 
-      const previewText = broadcastMsg.length > 250 ? broadcastMsg.slice(0, 250) + '...' : broadcastMsg;
+      const resText =
+        `🎉 <b>Broadcast Completed!</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `✅ <b>Delivered:</b> <code>${successCount}</code> users\n` +
+        `❌ <b>Failed/Blocked:</b> <code>${failCount}</code> users\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
-      const finalMsgText = 
-        `🎉 <b>Broadcast Finished!</b>\n\n` +
-        `📝 <b>Sent Broadcast Content:</b>\n` +
-        `<i>"${previewText}"</i>\n\n` +
-        `✅ Delivered: <code>${sentCount}</code>\n` +
-        `❌ Failed / Cleaned: <code>${failCount}</code>\n\n` +
-        `<i>Click below to delete this broadcast message from all users' chats:</i>`;
-
-      await ctx.reply(finalMsgText, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.broadcastResult(jobId)
-      });
+      try {
+        await ctx.api.editMessageText(ctx.chat.id, waitMsg.message_id, resText, {
+          parse_mode: 'HTML',
+          reply_markup: keyboards.broadcastResult(jobId)
+        });
+      } catch (e) {
+        await ctx.reply(resText, {
+          parse_mode: 'HTML',
+          reply_markup: keyboards.broadcastResult(jobId)
+        });
+      }
       return;
     }
 
     return next();
+  });
+
+  // Action: Revoke/Delete Direct Message from User Chat
+  bot.callbackQuery(/^action_delete_direct_(\d+)_(\d+)$/, async (ctx) => {
+    if (!checkAdmin(ctx)) return;
+    const targetChatId = parseInt(ctx.match[1], 10);
+    const targetMsgId = parseInt(ctx.match[2], 10);
+
+    try {
+      await bot.api.deleteMessage(targetChatId, targetMsgId);
+      await ctx.answerCallbackQuery('🗑️ Message deleted from user chat!').catch(() => {});
+    } catch (err) {
+      await ctx.answerCallbackQuery({ text: `❌ Could not delete message: ${err.message}`, show_alert: true }).catch(() => {});
+    }
+  });
+
+  // Action: Delete Broadcast Message from All User Chats
+  bot.callbackQuery(/^action_delete_broadcast_(.+)$/, async (ctx) => {
+    if (!checkAdmin(ctx)) return;
+    const jobId = ctx.match[1];
+    const records = broadcastCache.get(jobId);
+
+    if (!records || records.length === 0) {
+      return ctx.answerCallbackQuery({ text: '⚠️ Broadcast record expired or already deleted.', show_alert: true }).catch(() => {});
+    }
+
+    let deletedCount = 0;
+    for (const r of records) {
+      try {
+        await bot.api.deleteMessage(r.chatId, r.messageId);
+        deletedCount++;
+      } catch (e) {}
+    }
+
+    broadcastCache.delete(jobId);
+    await ctx.answerCallbackQuery(`🗑️ Deleted broadcast from ${deletedCount} user chats!`).catch(() => {});
+
+    try {
+      await ctx.editMessageText(
+        `🗑️ <b>Broadcast Recalled & Deleted</b>\n\n` +
+        `Successfully deleted broadcast message from <code>${deletedCount}</code> user chats.`,
+        { parse_mode: 'HTML', reply_markup: keyboards.backToAdmin() }
+      );
+    } catch (e) {}
+  });
+
+  // Action: Agree & Change Admin ID Callback
+  bot.callbackQuery(/^action_agree_admin_id_change_(\d+)$/, async (ctx) => {
+    if (!checkAdmin(ctx)) return;
+    const targetId = parseInt(ctx.match[1], 10);
+
+    const currentSetting = dbService.getSetting('custom_admin_ids', '');
+    const currentList = currentSetting ? currentSetting.split(',').map(id => String(id).trim()).filter(Boolean) : [];
+    
+    if (!currentList.includes(String(targetId))) {
+      currentList.push(String(targetId));
+      dbService.setSetting('custom_admin_ids', currentList.join(','));
+    }
+
+    dbService.setUserRole(targetId, 'admin');
+    dbService.setUserStatus(targetId, 'approved');
+
+    await ctx.answerCallbackQuery('✅ Super Admin ID added successfully!').catch(() => {});
+
+    try {
+      await bot.api.sendMessage(
+        targetId,
+        '👑 <b>You have been granted Super Admin Rights!</b>\n\nYou now have full administrator access to the bot control panel via /admin.',
+        { parse_mode: 'HTML', reply_markup: keyboards.mainMenu(true, sessionManager.isSessionConnected(targetId)) }
+      );
+    } catch (e) {}
+
+    const mode = dbService.getSetting('bot_mode', config.botMode);
+    const autoApprove = dbService.getSetting('auto_approve', 'off');
+    const adminMsg = buildAdminMenuText();
+
+    try {
+      await ctx.editMessageText(adminMsg, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.adminMenu(mode, autoApprove)
+      });
+    } catch (e) {}
   });
 }

@@ -73,7 +73,7 @@ function formatUserRecord(row) {
 }
 
 export const dbService = {
-  // Initialize Cloud Sync on startup
+  // Initialize Cloud Sync on startup (Restores Users, Settings, & Check Log Counters from GitHub Gist)
   async initCloudSync() {
     try {
       const backup = await restoreFromGist();
@@ -104,21 +104,43 @@ export const dbService = {
           stmt.run(s.key, s.value);
         }
       }
+
+      // Restore Check Logs & Total Counters from Cloud Gist
+      if (backup && backup.check_logs && Array.isArray(backup.check_logs)) {
+        console.log(`📥 Restoring ${backup.check_logs.length} check log records from GitHub Gist backup...`);
+        const stmt = db.prepare(`
+          INSERT OR IGNORE INTO check_logs (id, telegram_id, type, total_checked, registered_count, unregistered_count, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const c of backup.check_logs) {
+          stmt.run(
+            c.id,
+            c.telegram_id,
+            c.type || 'single',
+            c.total_checked || 0,
+            c.registered_count || 0,
+            c.unregistered_count || 0,
+            c.created_at || new Date().toISOString()
+          );
+        }
+      }
     } catch (e) {
       console.error('⚠️ Cloud sync initialization warning:', e.message);
     }
   },
 
-  // Export encrypted database dump for cloud Gist sync
+  // Export encrypted database dump & check counters for cloud Gist sync
   triggerGistSync() {
     setTimeout(() => {
       try {
         const rawUsers = db.prepare('SELECT * FROM users').all();
         const settings = db.prepare('SELECT * FROM settings').all();
+        const checkLogs = db.prepare('SELECT * FROM check_logs').all();
         const dump = {
           updated_at: new Date().toISOString(),
           users: rawUsers,
-          settings
+          settings,
+          check_logs: checkLogs
         };
         syncToGist(dump);
       } catch (e) {
@@ -301,12 +323,13 @@ export const dbService = {
     }
   },
 
-  // Check Logs & Stats
+  // Check Logs & Realtime Counters (Synced to Cloud Gist)
   logCheck(telegramId, type, total, registered, unregistered) {
     db.prepare(`
       INSERT INTO check_logs (telegram_id, type, total_checked, registered_count, unregistered_count)
       VALUES (?, ?, ?, ?, ?)
     `).run(telegramId, type, total, registered, unregistered);
+    this.triggerGistSync();
   },
 
   getUserStats(telegramId) {

@@ -45,7 +45,8 @@ async function sendServerOnlineAlert(bot) {
     `⚙️ <b>System Mode:</b> <code>${mode}</code>\n` +
     `📱 <b>Active Paired WA Sessions:</b> <code>${activeWaSessions}</code>\n` +
     `👥 <b>Total Registered Users:</b> <code>${stats.totalUsers}</code>\n` +
-    `☁️ <b>Cloud Gist Database:</b> <code>Synced & Restored ✅</code>`;
+    `📊 <b>Global Total Checked Numbers:</b> <code>${stats.totalChecks}</code> (✅ <code>${stats.totalRegistered}</code> | ❌ <code>${stats.totalUnregistered}</code>)\n` +
+    `☁️ <b>Cloud Gist Database & Counters:</b> <code>Synced & Restored ✅</code>`;
 
   for (const adminId of adminIds) {
     try {
@@ -66,7 +67,7 @@ export async function sendServerOfflineAlert() {
     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `⚠️ <b>WhatsApp Registration Checker Engine</b> is going <b>OFFLINE</b> / Restarting...\n\n` +
     `📅 <b>Shutdown Time:</b> <code>${timeStr} UTC</code>\n` +
-    `💾 <b>Database Snapshot:</b> <code>Saved & Synced ☁️</code>\n\n` +
+    `💾 <b>Database Snapshot & Counters:</b> <code>Saved & Synced ☁️</code>\n\n` +
     `<i>The system will automatically send an ONLINE alert once boot sequence completes.</i>`;
 
   const sendPromises = adminIds.map(adminId => {
