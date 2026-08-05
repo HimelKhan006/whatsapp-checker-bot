@@ -293,20 +293,36 @@ export function registerPairHandlers(bot) {
             isCodeConnected = true;
             clearUserPairingTrackers(telegramId);
 
-            // Cleanly delete prompt/code card AND user typed text message ONLY AFTER successful connection!
-            if (promptMsgId) {
-              try { await ctx.api.deleteMessage(chatId, promptMsgId); } catch (e) {}
-            }
+            // Cleanly delete user's typed text message
             if (userMsgId) {
               try { await ctx.api.deleteMessage(chatId, userMsgId); } catch (e) {}
             }
 
             const maskedPhone = formatMaskedPhone(user?.id);
-            await ctx.api.sendMessage(
-              chatId,
+            const successText = 
               `🎉 <b>WhatsApp Account Paired Successfully!</b>\n\n` +
               `<b>Connected Account:</b> <code>${maskedPhone}</code>\n` +
-              `You are now ready to start checking numbers!`,
+              `You are now ready to start checking numbers!`;
+
+            // Transform the pairing code card DIRECTLY into the success card in-place!
+            if (promptMsgId) {
+              try {
+                await ctx.api.editMessageText(
+                  chatId,
+                  promptMsgId,
+                  successText,
+                  {
+                    parse_mode: 'HTML',
+                    reply_markup: keyboards.mainMenu(ctx.state.isAdmin, true)
+                  }
+                );
+                return;
+              } catch (e) {}
+            }
+
+            await ctx.api.sendMessage(
+              chatId,
+              successText,
               {
                 parse_mode: 'HTML',
                 reply_markup: keyboards.mainMenu(ctx.state.isAdmin, true)
@@ -357,7 +373,7 @@ export function registerPairHandlers(bot) {
                 `3. Tap <b>Link a Device</b>.\n` +
                 `4. Tap <b>"Link with phone number instead"</b> at the bottom.\n` +
                 `5. Enter the code: <code>${formattedCode}</code>\n\n` +
-                `⏱️ <b>Expiration Countdown:</b>\n<code>${currentBar}</code>`,
+                `⏱️ <b>Expiration Countdown:</b>\n<code>${initialBar}</code>`,
                 {
                   parse_mode: 'HTML',
                   reply_markup: keyboards.cancelPairing()
