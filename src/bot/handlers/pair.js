@@ -263,12 +263,8 @@ export function registerPairHandlers(bot) {
       clearUserPairingTrackers(telegramId);
 
       const rawText = ctx.message.text.trim();
+      const userMsgId = ctx.message.message_id;
       const chatId = ctx.chat.id;
-
-      // Immediately delete the user's typed phone number text message cleanly right away!
-      try {
-        await ctx.deleteMessage();
-      } catch (e) {}
 
       // Edit prompt message directly to loading state so NO DUPLICATE MESSAGES are created
       if (promptMsgId) {
@@ -297,9 +293,12 @@ export function registerPairHandlers(bot) {
             isCodeConnected = true;
             clearUserPairingTrackers(telegramId);
 
-            // Purge prompt card ONLY AFTER successful connection
+            // Delete prompt card AND user typed text message ONLY AFTER successful connection!
             if (promptMsgId) {
               try { await ctx.api.deleteMessage(chatId, promptMsgId); } catch (e) {}
+            }
+            if (userMsgId) {
+              try { await ctx.api.deleteMessage(chatId, userMsgId); } catch (e) {}
             }
 
             const maskedPhone = formatMaskedPhone(user?.id);
