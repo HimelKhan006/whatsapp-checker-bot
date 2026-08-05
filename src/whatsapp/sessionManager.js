@@ -77,14 +77,21 @@ export const sessionManager = {
     sessionStatus.set(key, 'connecting');
 
     const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
-    const { version } = await fetchLatestBaileysVersion();
+    
+    let version;
+    try {
+      const vObj = await fetchLatestBaileysVersion();
+      version = vObj.version;
+    } catch (e) {
+      version = [2, 3000, 1015901307];
+    }
 
     const sock = makeWASocket({
       version,
       auth: state,
       printQRInTerminal: false,
       logger,
-      browser: ['Ubuntu', 'Chrome', '20.0.04'], // Standard 100% Baileys compliant browser tuple for smooth device linking
+      browser: Browsers.macOS('Chrome'), // Standard macOS Chrome payload for smooth 8-digit pairing code authorization
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 25000,
       emitOwnEvents: false,
@@ -164,13 +171,16 @@ export const sessionManager = {
 
     const sock = await this.initSession(telegramId, callbacks);
 
-    // Wait until WebSocket connection is open (polling every 100ms)
+    // Wait until WebSocket connection is fully open (polling every 100ms)
     let attempts = 0;
     while (!sock.ws || sock.ws.readyState !== 1) {
       await new Promise(r => setTimeout(r, 100));
       attempts++;
       if (attempts > 50) break; // max 5 seconds timeout
     }
+
+    // Give socket key registration handshake 1.5 seconds to settle with WhatsApp servers
+    await new Promise(r => setTimeout(r, 1500));
 
     const code = await sock.requestPairingCode(cleanNum);
     return code;
