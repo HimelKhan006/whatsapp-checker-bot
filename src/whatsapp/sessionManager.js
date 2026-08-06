@@ -85,7 +85,7 @@ export const sessionManager = {
     return false;
   },
 
-  async initSession(telegramId, callbacks = {}) {
+  async initSession(telegramId, callbacks = {}, isFreshPairing = false) {
     const key = String(telegramId);
     const sessionPath = this.getSessionDir(key);
 
@@ -137,9 +137,12 @@ export const sessionManager = {
         sessionStatus.set(key, 'connected');
         reconnectAttempts.delete(key);
         console.log(`[WA] Session connected for TG User: ${key}`);
-        if (callbacks.onConnected) {
-          callbacks.onConnected(sock.user);
+
+        // ONLY trigger onConnected notification card when user actively paired account (isFreshPairing === true)
+        if (isFreshPairing && callbacks.onConnected) {
+          try { callbacks.onConnected(sock.user); } catch (e) {}
         }
+
         try {
           dbService.triggerCloudSync();
         } catch (e) {}
@@ -161,7 +164,7 @@ export const sessionManager = {
           console.log(`[WA] Auto-reconnecting for ${key} (Attempt ${attempts}, backoff ${Math.round(backoffDelay / 1000)}s)...`);
 
           setTimeout(() => {
-            this.initSession(telegramId, callbacks).catch(err => console.error('[WA] Reconnect error:', err));
+            this.initSession(telegramId, callbacks, false).catch(err => console.error('[WA] Reconnect error:', err));
           }, backoffDelay);
         } else {
           reconnectAttempts.delete(key);
@@ -204,7 +207,8 @@ export const sessionManager = {
     // Force purge any old/stale session directory silently before starting clean pairing
     await this.logoutSession(telegramId, true);
 
-    const sock = await this.initSession(telegramId, callbacks);
+    // Pass isFreshPairing = true for explicit user pairing code request
+    const sock = await this.initSession(telegramId, callbacks, true);
 
     // Wait until WebSocket connection is fully open (polling every 100ms)
     let attempts = 0;
