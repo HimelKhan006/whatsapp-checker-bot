@@ -11,13 +11,14 @@ export function registerStartHandlers(bot) {
     const isNewUser = ctx.state.isNewUser || false;
     const isWaConnected = sessionManager.isSessionConnected(telegramId);
 
-    // Check referral payload e.g. /start ref_6798979733
+    // Process referral payload ONLY for brand-new first-time users (Professional referral system)
     const match = ctx.match ? ctx.match.trim() : '';
-    if (match.startsWith('ref_')) {
+    if (isNewUser && match.startsWith('ref_')) {
       const referrerId = parseInt(match.replace('ref_', ''), 10);
       if (!isNaN(referrerId) && referrerId !== telegramId) {
-        const existingUser = dbService.getUser(telegramId);
-        if (!existingUser || !existingUser.referrer_id) {
+        const referrerUser = dbService.getUser(referrerId);
+        // Ensure referrer is a valid user in system before crediting
+        if (referrerUser) {
           dbService.setReferrer(telegramId, referrerId);
           try {
             await ctx.api.sendMessage(
@@ -25,7 +26,7 @@ export function registerStartHandlers(bot) {
               `🎉 <b>New Referral Joined!</b>\n\nUser <b>${ctx.from.first_name}</b> (@${ctx.from.username || 'N/A'}) registered using your referral link!`,
               { parse_mode: 'HTML' }
             );
-          } catch (e) { }
+          } catch (e) {}
         }
       }
     }
@@ -248,97 +249,84 @@ export function registerStartHandlers(bot) {
   });
 
   bot.command('help', async (ctx) => {
+    const isAdmin = ctx.state.isAdmin;
+    const isWaConnected = sessionManager.isSessionConnected(ctx.from.id);
+
     const helpMsg =
-      `📖 <b>How to Use WhatsApp Registration Checker</b>\n\n` +
-      `1️⃣ <b>Pair WhatsApp Account:</b>\n` +
-      `   • Click 📱 <b>Connect</b> from main menu.\n` +
-      `   • Choose <b>Pair via QR</b> (Scan with WhatsApp > Linked Devices) OR <b>Pair via Code</b> (Receive 8-digit code).\n\n` +
-      `2️⃣ <b>Unified Number Checking:</b>\n` +
-      `   • Click 🔍 <b>Check Numbers</b> and send a single number (e.g. <code>+1234567890</code>), multiple numbers, or a <code>.txt</code>/<code>.csv</code> file!\n\n` +
-      `3️⃣ <b>Reports & Exporter:</b>\n` +
-      `   • Export full reports (CSV/TXT) or filter Registered/Unregistered numbers instantly.`;
+      `ℹ️ <b>WhatsApp Registration Checker Help & Commands</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<b>Available Commands:</b>\n` +
+      `• /start - Open main onboarding menu\n` +
+      `• /connect - Link your WhatsApp account via QR or 8-Digit code\n` +
+      `• /check - Check single or bulk phone numbers\n` +
+      `• /referral - View your personal referral link & statistics\n` +
+      `• /leaderboard - View Top 10 Referrers Leaderboard\n` +
+      `• /profile - View your profile details & usage stats\n` +
+      `• /help - Display this help manual\n` +
+      (isAdmin ? `• /admin - Open Admin Control Panel\n` : '') +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
     await ctx.reply(helpMsg, {
       parse_mode: 'HTML',
-      reply_markup: keyboards.backToMain()
+      reply_markup: keyboards.mainMenu(isAdmin, isWaConnected)
     });
+  });
+
+  bot.callbackQuery('nav_help', async (ctx) => {
+    await ctx.answerCallbackQuery().catch(() => { });
+    const isAdmin = ctx.state.isAdmin;
+    const isWaConnected = sessionManager.isSessionConnected(ctx.from.id);
+
+    const helpMsg =
+      `ℹ️ <b>WhatsApp Registration Checker Help & Commands</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `<b>Available Commands:</b>\n` +
+      `• /start - Open main onboarding menu\n` +
+      `• /connect - Link your WhatsApp account via QR or 8-Digit code\n` +
+      `• /check - Check single or bulk phone numbers\n` +
+      `• /referral - View your personal referral link & statistics\n` +
+      `• /leaderboard - View Top 10 Referrers Leaderboard\n` +
+      `• /profile - View your profile details & usage stats\n` +
+      `• /help - Display this help manual\n` +
+      (isAdmin ? `• /admin - Open Admin Control Panel\n` : '') +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+    try {
+      await ctx.editMessageText(helpMsg, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.mainMenu(isAdmin, isWaConnected)
+      });
+    } catch (e) {
+      await ctx.reply(helpMsg, {
+        parse_mode: 'HTML',
+        reply_markup: keyboards.mainMenu(isAdmin, isWaConnected)
+      });
+    }
   });
 
   bot.callbackQuery('nav_main', async (ctx) => {
     await ctx.answerCallbackQuery().catch(() => { });
     const isAdmin = ctx.state.isAdmin;
     const isWaConnected = sessionManager.isSessionConnected(ctx.from.id);
-    const waStatusTag = isWaConnected ? '🟢 Connected' : '🔴 Not Connected';
 
-    const welcomeMsg =
+    const mainMsg =
       `⚡ <b>WhatsApp Registration & Status Checker System</b> ⚡\n\n` +
-      `📱 <b>WhatsApp Client Status:</b> ${waStatusTag}\n` +
+      `📱 <b>WhatsApp Client Status:</b> ${isWaConnected ? '🟢 Connected' : '🔴 Not Connected'}\n` +
       `🔐 <b>Role:</b> <code>${isAdmin ? 'Admin 👑' : 'Authorized User 👤'}</code>\n\n` +
       `Select an option from the menu below:`;
 
-    const currentMsgText = ctx.callbackQuery?.message?.text || '';
-
-    // If navigating back to main menu from a result box, send a NEW message to preserve check results in chat history!
-    if (currentMsgText.includes('Check Result') || currentMsgText.includes('Bulk Check Completed') || currentMsgText.includes('Export Report')) {
-      return ctx.reply(welcomeMsg, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.mainMenu(isAdmin, isWaConnected)
-      });
-    }
-
     try {
-      await ctx.editMessageText(welcomeMsg, {
+      await ctx.editMessageText(mainMsg, {
         parse_mode: 'HTML',
         reply_markup: keyboards.mainMenu(isAdmin, isWaConnected)
       });
     } catch (e) {
       if (!e.message?.includes('message is not modified')) {
-        await ctx.reply(welcomeMsg, {
+        await ctx.reply(mainMsg, {
           parse_mode: 'HTML',
           reply_markup: keyboards.mainMenu(isAdmin, isWaConnected)
         });
       }
     }
-  });
-
-  bot.callbackQuery('nav_help', async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => { });
-    const helpMsg =
-      `📖 <b>How to Use WhatsApp Registration Checker</b>\n\n` +
-      `1️⃣ <b>Pair WhatsApp Account:</b>\n` +
-      `   • Click 📱 <b>Connect</b> from main menu.\n` +
-      `   • Choose <b>Pair via QR</b> (Scan with WhatsApp > Linked Devices) OR <b>Pair via Code</b> (Receive 8-digit code).\n\n` +
-      `2️⃣ <b>Unified Number Checking:</b>\n` +
-      `   • Click 🔍 <b>Check Numbers</b> and send a single number (e.g. <code>+1234567890</code>), multiple numbers, or a <code>.txt</code>/<code>.csv</code> file!\n\n` +
-      `3️⃣ <b>Reports & Exporter:</b>\n` +
-      `   • Export full reports (CSV/TXT) or filter Registered/Unregistered numbers instantly.`;
-
-    try {
-      await ctx.editMessageText(helpMsg, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.backToMain()
-      });
-    } catch (e) { }
-  });
-
-  bot.callbackQuery('nav_stats', async (ctx) => {
-    await ctx.answerCallbackQuery().catch(() => { });
-    const stats = dbService.getStats();
-    const isConnected = sessionManager.isSessionConnected(ctx.from.id);
-
-    const statsMsg =
-      `📊 <b>System Diagnostic Statistics</b>\n\n` +
-      `📱 <b>My WA Client:</b> ${isConnected ? '🟢 Active' : '🔴 Offline'}\n` +
-      `🔍 <b>Total Checks System-wide:</b> <code>${stats.totalChecks}</code>\n` +
-      `✅ <b>Registered WA Found:</b> <code>${stats.totalRegistered}</code>\n` +
-      `❌ <b>Unregistered Numbers:</b> <code>${stats.totalUnregistered}</code>\n` +
-      `👥 <b>Total Active Approved Users:</b> <code>${stats.totalApprovedUsers}</code>`;
-
-    try {
-      await ctx.editMessageText(statsMsg, {
-        parse_mode: 'HTML',
-        reply_markup: keyboards.backToMain()
-      });
-    } catch (e) { }
   });
 }
